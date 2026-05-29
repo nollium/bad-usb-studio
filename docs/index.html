@@ -296,6 +296,23 @@ header h1 { font-size: 18px; flex: 1; }
   animation: popIn 0.08s ease-out;
 }
 @keyframes popIn { from { transform: translateX(-50%) scale(0.6); opacity: 0; } }
+
+/* Mini trackpad next to keyboard */
+.kb-minipad {
+  width: 44px;
+  height: 38px;
+  background: var(--card);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 12px;
+  touch-action: none;
+  user-select: none;
+  flex-shrink: 0;
+}
+.kb-minipad.touching { background: #1a2040; border: 1px solid var(--accent); }
 .kb-section { margin-bottom: 6px; }
 .kb-section-title { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
 .kb-text-row { display: flex; gap: 4px; margin-bottom: 6px; }
@@ -1135,13 +1152,14 @@ function renderKeyboard() {
   for (const c of r3) html += keyFn(c);
   html += '<div class="kb-key wide" data-action="backspace">&#9003;</div>';
   html += '</div>';
-  // Row 4: symbols toggle, comma, space, period, enter
+  // Row 4: symbols toggle, comma, space, period, enter + mini trackpad
   html += '<div class="kb-row">';
   html += '<div class="kb-key wide" data-action="symbols">' + (kbSymbols ? 'ABC' : '?123') + '</div>';
   html += '<div class="kb-key" data-char="' + esc(layout.extra[0]) + '" data-display="' + esc(layout.extra[0]) + '">' + esc(layout.extra[0]) + '</div>';
-  html += '<div class="kb-key space" data-action="space">Space</div>';
+  html += '<div class="kb-key space" data-action="space" data-display="&#9251;">Space</div>';
   html += '<div class="kb-key" data-char="' + esc(layout.extra[1]) + '" data-display="' + esc(layout.extra[1]) + '">' + esc(layout.extra[1]) + '</div>';
   html += '<div class="kb-key enter" data-action="enter">&#9166;</div>';
+  html += '<div class="kb-minipad" id="kb-minipad">&#9654;</div>';
   html += '</div>';
 
   container.innerHTML = html;
@@ -1157,7 +1175,7 @@ function setupKeyboardTouch() {
       e.preventDefault();
       key.classList.add('pressed');
       const display = key.dataset.display || key.textContent;
-      if (key.dataset.char) {
+      if (key.dataset.char || key.dataset.action === 'space') {
         const rect = key.getBoundingClientRect();
         showPopup(display, rect.left + rect.width / 2, rect.top);
       }
@@ -1206,6 +1224,49 @@ function setupKeyboardTouch() {
       hidePopup();
     });
   });
+
+  // Mini trackpad
+  const minipad = document.getElementById('kb-minipad');
+  if (minipad && !minipad._initialized) {
+    minipad._initialized = true;
+    let mpLastX = 0, mpLastY = 0, mpLastTime = 0, mpMoving = false;
+
+    minipad.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      mpLastX = e.touches[0].clientX;
+      mpLastY = e.touches[0].clientY;
+      mpLastTime = performance.now();
+      mpMoving = true;
+      minipad.classList.add('touching');
+    }, {passive: false});
+
+    minipad.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!mpMoving || !kbActive) return;
+      const now = performance.now();
+      const dt = now - mpLastTime;
+      const rawDx = e.touches[0].clientX - mpLastX;
+      const rawDy = e.touches[0].clientY - mpLastY;
+      mpLastX = e.touches[0].clientX;
+      mpLastY = e.touches[0].clientY;
+      mpLastTime = now;
+      const dx = accelCurve(rawDx, dt);
+      const dy = accelCurve(rawDy, dt);
+      const sx = Math.round(dx);
+      const sy = Math.round(dy);
+      if (sx !== 0 || sy !== 0) {
+        sendFast('MMOVE:' + Math.max(-127,Math.min(127,sx)) + ',' + Math.max(-127,Math.min(127,sy)));
+      }
+    }, {passive: false});
+
+    minipad.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      mpMoving = false;
+      minipad.classList.remove('touching');
+    }, {passive: false});
+  }
 }
 
 function toggleMod(el) {
