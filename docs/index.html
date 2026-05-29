@@ -297,27 +297,19 @@ header h1 { font-size: 18px; flex: 1; }
 }
 @keyframes popIn { from { transform: translateX(-50%) scale(0.6); opacity: 0; } }
 
-/* Mini trackpad next to keyboard */
-.kb-minipad-wrap {
-  position: relative;
-  flex-shrink: 0;
-  width: 60px;
-  margin-left: 4px;
-}
+/* Mini trackpad */
 .kb-minipad {
-  width: 100%;
-  height: 100%;
-  min-height: 80px;
   background: var(--card);
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   touch-action: none;
   user-select: none;
   border: 1px dashed var(--muted);
+  flex-shrink: 0;
 }
 .kb-minipad.touching { background: #1a2040; border: 1px solid var(--accent); color: var(--accent); }
 .kb-section { margin-bottom: 6px; }
@@ -541,6 +533,23 @@ header h1 { font-size: 18px; flex: 1; }
           <div class="kb-key fn" onclick="kbRaw('GUI e')">Win+E</div>
           <div class="kb-key fn" onclick="kbRaw('GUI TAB')">Win+Tab</div>
         </div>
+      </div>
+
+      <!-- Mini trackpad at bottom of keyboard tab -->
+      <div style="display:flex; gap:8px; margin-top:8px; align-items:stretch;">
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+          <!-- Settings inline -->
+          <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:13px; color:var(--muted);">Layout:</label>
+            <select id="layout-select-kb" onchange="setLayout(this.value)" style="padding:6px 10px; background:var(--surface); color:var(--text); border:1px solid var(--card); border-radius:6px; font-size:13px;">
+              <option value="US">US</option>
+              <option value="FR">FR</option>
+              <option value="DE">DE</option>
+              <option value="ES">ES</option>
+            </select>
+          </div>
+        </div>
+        <div class="kb-minipad" id="kb-minipad" style="width:120px; height:100px;">&#9654; trackpad</div>
       </div>
     </div>
 
@@ -1148,9 +1157,6 @@ function renderKeyboard() {
   html += '<div class="kb-row" style="padding: 0 12px;">';
   for (const c of r2) html += keyFn(c);
   html += '</div>';
-  // Rows 3-4 wrapped with mini trackpad on the right
-  html += '<div style="display:flex;gap:4px;">';
-  html += '<div style="flex:1;">';
   // Row 3 with shift + backspace
   html += '<div class="kb-row">';
   if (!kbSymbols) {
@@ -1166,10 +1172,6 @@ function renderKeyboard() {
   html += '<div class="kb-key space" data-action="space" data-display="&#9251;">Space</div>';
   html += '<div class="kb-key" data-char="' + esc(layout.extra[1]) + '" data-display="' + esc(layout.extra[1]) + '">' + esc(layout.extra[1]) + '</div>';
   html += '<div class="kb-key enter" data-action="enter">&#9166;</div>';
-  html += '</div>';
-  html += '</div>';
-  // Mini trackpad spanning both rows
-  html += '<div class="kb-minipad-wrap"><div class="kb-minipad" id="kb-minipad">&#9654;<br>pad</div></div>';
   html += '</div>';
 
   container.innerHTML = html;
@@ -1611,6 +1613,9 @@ function mouseScroll(delta) {
 async function setLayout(layout) {
   displayLayout = layout;
   renderKeyboard();
+  // Sync both layout selectors
+  const selectors = document.querySelectorAll('#layout-select, #layout-select-kb');
+  selectors.forEach(s => { if (s) s.value = layout; });
   try {
     const resp = await sendCommand('LAYOUT:' + layout);
     if (resp === 'OK') {
