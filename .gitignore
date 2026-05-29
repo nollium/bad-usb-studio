@@ -1,0 +1,6 @@
+bad_usb_studio/dist/
+bad_usb_studio/.vscode/
+.ufbt/
+*.elf
+*.fap
+*.o

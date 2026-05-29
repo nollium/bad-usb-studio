@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#ff6600">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Bad USB Studio</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --card: #0f3460;
+  --accent: #ff6600;
+  --accent2: #e94560;
+  --text: #eee;
+  --muted: #888;
+  --success: #4caf50;
+  --error: #f44336;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+header {
+  background: var(--surface);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 2px solid var(--accent);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header h1 { font-size: 18px; flex: 1; }
+.status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.status.disconnected { background: var(--error); }
+.status.connected { background: var(--success); }
+.status.connecting { background: var(--accent); }
+.container { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+/* Connect screen */
+#connect-screen { text-align: center; padding-top: 60px; }
+#connect-screen p { color: var(--muted); margin: 12px 0; line-height: 1.5; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.2s;
+  color: white;
+}
+.btn:active { transform: scale(0.96); }
+.btn-primary { background: var(--accent); }
+.btn-danger { background: var(--accent2); }
+.btn-secondary { background: var(--card); }
+.btn-success { background: var(--success); }
+.btn-sm { padding: 8px 16px; font-size: 14px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Main UI */
+#main-screen { display: none; }
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 4px;
+}
+.tab {
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.tab.active { background: var(--accent); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Editor */
+.editor-area {
+  width: 100%;
+  min-height: 200px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--card);
+  border-radius: 10px;
+  padding: 12px;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.editor-area:focus { border-color: var(--accent); outline: none; }
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.cmd-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.cmd-btn {
+  padding: 6px 10px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--muted);
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: monospace;
+}
+.cmd-btn:active { background: var(--accent); }
+
+/* Saved list */
+.payload-list { list-style: none; }
+.payload-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+.payload-item .name { flex: 1; font-family: monospace; }
+.payload-item .actions { display: flex; gap: 6px; }
+
+/* Quick type */
+#quick-input {
+  width: 100%;
+  padding: 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--card);
+  border-radius: 10px;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+#quick-input:focus { border-color: var(--accent); outline: none; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 100;
+  animation: fadeIn 0.2s;
+}
+.toast.success { background: var(--success); }
+.toast.error { background: var(--error); }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+
+/* Save dialog */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 50;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 400px;
+}
+.modal h3 { margin-bottom: 16px; }
+.modal input {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--card);
+  border-radius: 8px;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+.modal input:focus { border-color: var(--accent); outline: none; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Log */
+.log {
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 12px;
+  margin-top: 16px;
+  max-height: 150px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+.log .entry { margin: 2px 0; }
+.log .entry.ok { color: var(--success); }
+.log .entry.err { color: var(--error); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bad USB Studio</h1>
+  <span id="status" class="status disconnected">Disconnected</span>
+</header>
+
+<div class="container">
+  <!-- Connect screen -->
+  <div id="connect-screen">
+    <h2>Connect to Flipper</h2>
+    <p>Open <b>Bad USB Studio</b> on your Flipper,<br>go to <b>Phone Input (BLE)</b>,<br>then tap Connect below.</p>
+    <br>
+    <button class="btn btn-primary" id="connect-btn" onclick="connectFlipper()">Connect via Bluetooth</button>
+    <p style="margin-top: 20px; font-size: 12px;">Requires Chrome on Android with Web Bluetooth</p>
+  </div>
+
+  <!-- Main screen -->
+  <div id="main-screen">
+    <div class="tabs">
+      <div class="tab active" data-tab="editor" onclick="switchTab('editor')">Editor</div>
+      <div class="tab" data-tab="saved" onclick="switchTab('saved')">Saved</div>
+      <div class="tab" data-tab="quick" onclick="switchTab('quick')">Quick Type</div>
+    </div>
+
+    <!-- Editor tab -->
+    <div id="tab-editor" class="tab-content active">
+      <div class="cmd-shortcuts">
+        <button class="cmd-btn" onclick="insertCmd('STRING ')">STRING</button>
+        <button class="cmd-btn" onclick="insertCmd('DELAY ')">DELAY</button>
+        <button class="cmd-btn" onclick="insertCmd('ENTER')">ENTER</button>
+        <button class="cmd-btn" onclick="insertCmd('TAB')">TAB</button>
+        <button class="cmd-btn" onclick="insertCmd('ESCAPE')">ESC</button>
+        <button class="cmd-btn" onclick="insertCmd('GUI ')">GUI</button>
+        <button class="cmd-btn" onclick="insertCmd('GUI r')">WIN+R</button>
+        <button class="cmd-btn" onclick="insertCmd('CTRL ')">CTRL</button>
+        <button class="cmd-btn" onclick="insertCmd('ALT ')">ALT</button>
+        <button class="cmd-btn" onclick="insertCmd('SHIFT ')">SHIFT</button>
+        <button class="cmd-btn" onclick="insertCmd('CTRL c')">CTRL+C</button>
+        <button class="cmd-btn" onclick="insertCmd('CTRL v')">CTRL+V</button>
+        <button class="cmd-btn" onclick="insertCmd('ALT F4')">ALT+F4</button>
+        <button class="cmd-btn" onclick="insertCmd('STRINGLN ')">STRINGLN</button>
+        <button class="cmd-btn" onclick="insertCmd('DEFAULT_DELAY ')">DEF_DELAY</button>
+        <button class="cmd-btn" onclick="insertCmd('REPEAT ')">REPEAT</button>
+        <button class="cmd-btn" onclick="insertCmd('REM ')">REM</button>
+      </div>
+      <textarea id="editor" class="editor-area" placeholder="Enter DuckyScript payload here...&#10;&#10;Example:&#10;DELAY 1000&#10;GUI r&#10;DELAY 500&#10;STRING notepad&#10;ENTER&#10;DELAY 1000&#10;STRING Hello from Flipper!&#10;ENTER"></textarea>
+      <div class="editor-actions">
+        <button class="btn btn-primary btn-sm" onclick="execPayload()">Execute</button>
+        <button class="btn btn-success btn-sm" onclick="showSaveDialog()">Save to Flipper</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearEditor()">Clear</button>
+      </div>
+      <div id="log" class="log"></div>
+    </div>
+
+    <!-- Saved tab -->
+    <div id="tab-saved" class="tab-content">
+      <button class="btn btn-secondary btn-sm" onclick="refreshPayloads()" style="margin-bottom: 12px;">Refresh</button>
+      <ul id="payload-list" class="payload-list">
+        <li style="color: var(--muted); text-align: center; padding: 20px;">Tap Refresh to load</li>
+      </ul>
+    </div>
+
+    <!-- Quick Type tab -->
+    <div id="tab-quick" class="tab-content">
+      <p style="color: var(--muted); margin-bottom: 12px;">Type text and send it as USB keystrokes via the Flipper.</p>
+      <input type="text" id="quick-input" placeholder="Type text to send...">
+      <div class="editor-actions">
+        <button class="btn btn-primary btn-sm" onclick="quickType()">Send as Keystrokes</button>
+        <button class="btn btn-success btn-sm" onclick="quickSave()">Save as Payload</button>
+      </div>
+    </div>
+
+    <br>
+    <button class="btn btn-danger btn-sm" onclick="disconnectFlipper()">Disconnect</button>
+  </div>
+</div>
+
+<!-- Save dialog -->
+<div id="save-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Save Payload</h3>
+    <input type="text" id="save-filename" placeholder="payload_name">
+    <div class="modal-actions">
+      <button class="btn btn-secondary btn-sm" onclick="closeSaveDialog()">Cancel</button>
+      <button class="btn btn-success btn-sm" onclick="savePayload()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SERIAL_SERVICE_UUID = '8fe5b3d5-2e7f-4a98-2a48-7acc60fe0000';
+const SERIAL_RX_UUID = '19ed82ae-ed21-4c9d-4145-228e61fe0000';
+const SERIAL_TX_UUID = '19ed82ae-ed21-4c9d-4145-228e62fe0000';
+
+let device = null;
+let server = null;
+let rxChar = null;
+let txChar = null;
+let responseResolve = null;
+let rxBuffer = '';
+
+function setStatus(text, cls) {
+  const el = document.getElementById('status');
+  el.textContent = text;
+  el.className = 'status ' + cls;
+}
+
+function toast(msg, type = 'success') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+function log(msg, cls = '') {
+  const el = document.getElementById('log');
+  const e = document.createElement('div');
+  e.className = 'entry ' + cls;
+  e.textContent = '> ' + msg;
+  el.appendChild(e);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function connectFlipper() {
+  if (!navigator.bluetooth) {
+    toast('Web Bluetooth not supported. Use Chrome on Android.', 'error');
+    return;
+  }
+
+  try {
+    setStatus('Connecting...', 'connecting');
+    document.getElementById('connect-btn').disabled = true;
+
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERIAL_SERVICE_UUID] }],
+      optionalServices: [SERIAL_SERVICE_UUID]
+    });
+
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERIAL_SERVICE_UUID);
+    rxChar = await service.getCharacteristic(SERIAL_RX_UUID);
+    txChar = await service.getCharacteristic(SERIAL_TX_UUID);
+
+    await txChar.startNotifications();
+    txChar.addEventListener('characteristicvaluechanged', onTxData);
+
+    setStatus('Connected', 'connected');
+    document.getElementById('connect-screen').style.display = 'none';
+    document.getElementById('main-screen').style.display = 'block';
+
+    // Ping to verify
+    const pong = await sendCommand('PING');
+    if (pong === 'PONG') {
+      toast('Connected to Flipper!');
+    }
+
+  } catch (err) {
+    console.error(err);
+    setStatus('Disconnected', 'disconnected');
+    document.getElementById('connect-btn').disabled = false;
+    if (err.name !== 'NotFoundError') {
+      toast('Connection failed: ' + err.message, 'error');
+    }
+  }
+}
+
+function onDisconnected() {
+  setStatus('Disconnected', 'disconnected');
+  document.getElementById('connect-screen').style.display = 'block';
+  document.getElementById('main-screen').style.display = 'none';
+  document.getElementById('connect-btn').disabled = false;
+  rxChar = null;
+  txChar = null;
+  server = null;
+}
+
+function disconnectFlipper() {
+  if (device && device.gatt.connected) {
+    device.gatt.disconnect();
+  }
+}
+
+function onTxData(event) {
+  const value = event.target.value;
+  const bytes = new Uint8Array(value.buffer);
+
+  for (const b of bytes) {
+    if (b === 0) {
+      // End of message
+      if (responseResolve) {
+        responseResolve(rxBuffer);
+        responseResolve = null;
+      }
+      rxBuffer = '';
+    } else {
+      rxBuffer += String.fromCharCode(b);
+    }
+  }
+}
+
+async function sendCommand(cmd) {
+  if (!rxChar) throw new Error('Not connected');
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(cmd + '\0');
+
+  // Send in chunks (BLE MTU is typically 20-243 bytes)
+  const CHUNK_SIZE = 200;
+  for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+    const chunk = data.slice(i, Math.min(i + CHUNK_SIZE, data.length));
+    await rxChar.writeValueWithoutResponse(chunk);
+  }
+
+  // Wait for response with timeout
+  return new Promise((resolve, reject) => {
+    responseResolve = resolve;
+    setTimeout(() => {
+      if (responseResolve === resolve) {
+        responseResolve = null;
+        resolve('');
+      }
+    }, 15000);
+  });
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
+}
+
+function insertCmd(cmd) {
+  const editor = document.getElementById('editor');
+  const pos = editor.selectionStart;
+  const text = editor.value;
+  const needsNewline = pos > 0 && text[pos - 1] !== '\n';
+  const insert = (needsNewline ? '\n' : '') + cmd;
+  editor.value = text.substring(0, pos) + insert + text.substring(pos);
+  editor.selectionStart = editor.selectionEnd = pos + insert.length;
+  editor.focus();
+}
+
+function clearEditor() {
+  document.getElementById('editor').value = '';
+}
+
+async function execPayload() {
+  const script = document.getElementById('editor').value.trim();
+  if (!script) { toast('Editor is empty', 'error'); return; }
+
+  log('Executing payload...');
+  try {
+    const resp = await sendCommand('EXEC:' + script);
+    if (resp === 'RUNNING') {
+      log('Flipper is executing...', 'ok');
+      // Wait for DONE
+      const done = await new Promise((resolve) => {
+        responseResolve = resolve;
+        setTimeout(() => { responseResolve = null; resolve('TIMEOUT'); }, 30000);
+      });
+      log(done === 'DONE' ? 'Execution complete!' : 'Timeout', done === 'DONE' ? 'ok' : 'err');
+    } else if (resp === 'DONE') {
+      log('Execution complete!', 'ok');
+      toast('Executed!');
+    } else {
+      log('Response: ' + resp, 'err');
+    }
+  } catch (err) {
+    log('Error: ' + err.message, 'err');
+    toast('Execution failed', 'error');
+  }
+}
+
+function showSaveDialog() {
+  document.getElementById('save-modal').classList.add('active');
+  document.getElementById('save-filename').value = '';
+  document.getElementById('save-filename').focus();
+}
+
+function closeSaveDialog() {
+  document.getElementById('save-modal').classList.remove('active');
+}
+
+async function savePayload() {
+  const name = document.getElementById('save-filename').value.trim();
+  const script = document.getElementById('editor').value.trim();
+
+  if (!name) { toast('Enter a filename', 'error'); return; }
+  if (!script) { toast('Editor is empty', 'error'); return; }
+
+  closeSaveDialog();
+  log('Saving ' + name + '...');
+
+  try {
+    const resp = await sendCommand('SAVE:' + name + ':' + script);
+    if (resp === 'OK') {
+      toast('Saved!');
+      log('Saved as ' + name + '.txt', 'ok');
+    } else {
+      toast('Save failed', 'error');
+      log('Save error: ' + resp, 'err');
+    }
+  } catch (err) {
+    toast('Save failed: ' + err.message, 'error');
+  }
+}
+
+async function refreshPayloads() {
+  const list = document.getElementById('payload-list');
+  list.innerHTML = '<li style="color: var(--muted); padding: 20px; text-align: center;">Loading...</li>';
+
+  try {
+    const resp = await sendCommand('LIST');
+    list.innerHTML = '';
+    if (!resp) {
+      list.innerHTML = '<li style="color: var(--muted); padding: 20px; text-align: center;">No payloads saved</li>';
+      return;
+    }
+
+    const names = resp.split('\n').filter(n => n.trim());
+    if (names.length === 0) {
+      list.innerHTML = '<li style="color: var(--muted); padding: 20px; text-align: center;">No payloads saved</li>';
+      return;
+    }
+
+    for (const name of names) {
+      const li = document.createElement('li');
+      li.className = 'payload-item';
+      li.innerHTML = `
+        <span class="name">${name}</span>
+        <div class="actions">
+          <button class="btn btn-primary btn-sm" onclick="loadPayload('${name}')">Edit</button>
+        </div>`;
+      list.appendChild(li);
+    }
+  } catch (err) {
+    list.innerHTML = '<li style="color: var(--muted); padding: 20px; text-align: center;">Error loading</li>';
+  }
+}
+
+async function loadPayload(name) {
+  // For now, just switch to editor tab — loading file content would need a GET command
+  toast('Tap to switch to editor and write your payload');
+  switchTab('editor');
+}
+
+async function quickType() {
+  const text = document.getElementById('quick-input').value;
+  if (!text) { toast('Enter text first', 'error'); return; }
+
+  try {
+    const resp = await sendCommand('EXEC:STRING ' + text + '\nENTER');
+    if (resp === 'RUNNING' || resp === 'DONE') {
+      toast('Text sent!');
+    }
+  } catch (err) {
+    toast('Failed: ' + err.message, 'error');
+  }
+}
+
+async function quickSave() {
+  const text = document.getElementById('quick-input').value;
+  if (!text) { toast('Enter text first', 'error'); return; }
+
+  document.getElementById('editor').value = 'STRING ' + text + '\nENTER';
+  switchTab('editor');
+  showSaveDialog();
+}
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
