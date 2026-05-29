@@ -1347,7 +1347,7 @@ function initTrackpad() {
     if (!mouseActive) return;
     if (e.touches.length === 2 && isScrolling) {
       const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const rawDelta = scrollLastY - midY;
+      const rawDelta = midY - scrollLastY;
       scrollLastY = midY;
       scrollAccum += rawDelta;
       if (Math.abs(scrollAccum) >= 10) {
