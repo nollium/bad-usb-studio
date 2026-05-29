@@ -298,21 +298,28 @@ header h1 { font-size: 18px; flex: 1; }
 @keyframes popIn { from { transform: translateX(-50%) scale(0.6); opacity: 0; } }
 
 /* Mini trackpad next to keyboard */
+.kb-minipad-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 60px;
+  margin-left: 4px;
+}
 .kb-minipad {
-  width: 44px;
-  height: 38px;
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
   background: var(--card);
-  border-radius: 6px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 10px;
   touch-action: none;
   user-select: none;
-  flex-shrink: 0;
+  border: 1px dashed var(--muted);
 }
-.kb-minipad.touching { background: #1a2040; border: 1px solid var(--accent); }
+.kb-minipad.touching { background: #1a2040; border: 1px solid var(--accent); color: var(--accent); }
 .kb-section { margin-bottom: 6px; }
 .kb-section-title { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
 .kb-text-row { display: flex; gap: 4px; margin-bottom: 6px; }
@@ -1141,6 +1148,9 @@ function renderKeyboard() {
   html += '<div class="kb-row" style="padding: 0 12px;">';
   for (const c of r2) html += keyFn(c);
   html += '</div>';
+  // Rows 3-4 wrapped with mini trackpad on the right
+  html += '<div style="display:flex;gap:4px;">';
+  html += '<div style="flex:1;">';
   // Row 3 with shift + backspace
   html += '<div class="kb-row">';
   if (!kbSymbols) {
@@ -1149,14 +1159,17 @@ function renderKeyboard() {
   for (const c of r3) html += keyFn(c);
   html += '<div class="kb-key wide" data-action="backspace">&#9003;</div>';
   html += '</div>';
-  // Row 4: symbols toggle, comma, space, period, enter + mini trackpad
+  // Row 4: symbols toggle, comma, space, period, enter
   html += '<div class="kb-row">';
   html += '<div class="kb-key wide" data-action="symbols">' + (kbSymbols ? 'ABC' : '?123') + '</div>';
   html += '<div class="kb-key" data-char="' + esc(layout.extra[0]) + '" data-display="' + esc(layout.extra[0]) + '">' + esc(layout.extra[0]) + '</div>';
   html += '<div class="kb-key space" data-action="space" data-display="&#9251;">Space</div>';
   html += '<div class="kb-key" data-char="' + esc(layout.extra[1]) + '" data-display="' + esc(layout.extra[1]) + '">' + esc(layout.extra[1]) + '</div>';
   html += '<div class="kb-key enter" data-action="enter">&#9166;</div>';
-  html += '<div class="kb-minipad" id="kb-minipad">&#9654;</div>';
+  html += '</div>';
+  html += '</div>';
+  // Mini trackpad spanning both rows
+  html += '<div class="kb-minipad-wrap"><div class="kb-minipad" id="kb-minipad">&#9654;<br>pad</div></div>';
   html += '</div>';
 
   container.innerHTML = html;
@@ -1172,10 +1185,8 @@ function setupKeyboardTouch() {
       e.preventDefault();
       key.classList.add('pressed');
       const display = key.dataset.display || key.textContent;
-      if (key.dataset.char || key.dataset.action === 'space') {
-        const rect = key.getBoundingClientRect();
-        showPopup(display, rect.left + rect.width / 2, rect.top);
-      }
+      const rect = key.getBoundingClientRect();
+      showPopup(display, rect.left + rect.width / 2, rect.top);
     }, {passive: false});
 
     key.addEventListener('touchend', (e) => {
@@ -1612,8 +1623,31 @@ async function setLayout(layout) {
   }
 }
 
+// Add touch feedback to all static .kb-key elements (F-keys, arrows, combos)
+function setupStaticKeyFeedback() {
+  document.querySelectorAll('#tab-keyboard .kb-key').forEach(key => {
+    if (key._hasFeedback) return;
+    key._hasFeedback = true;
+    key.addEventListener('touchstart', (e) => {
+      key.classList.add('pressed');
+      const display = key.dataset.display || key.textContent;
+      const rect = key.getBoundingClientRect();
+      showPopup(display, rect.left + rect.width / 2, rect.top);
+    }, {passive: true});
+    key.addEventListener('touchend', () => {
+      key.classList.remove('pressed');
+      hidePopup();
+    });
+    key.addEventListener('touchcancel', () => {
+      key.classList.remove('pressed');
+      hidePopup();
+    });
+  });
+}
+
 // Initial keyboard render
 renderKeyboard();
+setupStaticKeyFeedback();
 
 // Register service worker
 if ('serviceWorker' in navigator) {
