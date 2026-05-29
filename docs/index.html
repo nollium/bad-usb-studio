@@ -1169,7 +1169,7 @@ let rafId = null;
 // Low velocity = precise, high velocity = boosted but not crazy
 function accelCurve(rawDelta, dtMs) {
   const speed = parseInt(document.getElementById('mouse-speed').value) || 6;
-  const sens = 0.15 + speed * 0.12; // 0.87 at speed 6
+  const sens = 0.3 + speed * 0.2; // 1.5 at speed 6
   const absDelta = Math.abs(rawDelta);
   if (absDelta < 0.2) return 0;
 
