@@ -372,14 +372,88 @@ async function connectFlipper() {
 
     device = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [SERIAL_SERVICE_UUID]
+      optionalServices: [
+        SERIAL_SERVICE_UUID,
+        // Common Flipper BLE serial service UUID variants
+        '00000001-0000-1000-8000-00805f9b34fb',
+        '0000fee7-0000-1000-8000-00805f9b34fb',
+        // Allow full enumeration
+        'generic_access',
+        'generic_attribute',
+      ]
     });
 
     device.addEventListener('gattserverdisconnected', onDisconnected);
+    setStatus('GATT connect...', 'connecting');
     server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERIAL_SERVICE_UUID);
-    rxChar = await service.getCharacteristic(SERIAL_RX_UUID);
-    txChar = await service.getCharacteristic(SERIAL_TX_UUID);
+
+    // Try known serial service UUID first, then discover all services
+    let service = null;
+    const uuidsToTry = [
+      SERIAL_SERVICE_UUID,
+      '0000fee7-0000-1000-8000-00805f9b34fb',
+    ];
+
+    for (const uuid of uuidsToTry) {
+      try {
+        service = await server.getPrimaryService(uuid);
+        console.log('Found service:', uuid);
+        break;
+      } catch (e) {
+        console.log('Service not found:', uuid);
+      }
+    }
+
+    // If none found, discover what services ARE available
+    if (!service) {
+      let discovered = [];
+      try {
+        const services = await server.getPrimaryServices();
+        discovered = services.map(s => s.uuid);
+        console.log('Available services:', discovered);
+      } catch (e) {
+        console.log('Cannot enumerate services:', e.message);
+      }
+
+      // Try each discovered service to find one with our RX/TX characteristics
+      for (const s of discovered) {
+        try {
+          const testSvc = await server.getPrimaryService(s);
+          const chars = await testSvc.getCharacteristics();
+          const charUuids = chars.map(c => c.uuid);
+          console.log('Service', s, 'chars:', charUuids);
+
+          // Look for a writable + notifiable pair (serial RX/TX pattern)
+          const writable = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
+          const notifiable = chars.find(c => c.properties.notify);
+          if (writable && notifiable && writable !== notifiable) {
+            service = testSvc;
+            rxChar = writable;
+            txChar = notifiable;
+            console.log('Auto-detected serial service:', s);
+            console.log('RX (write):', writable.uuid, 'TX (notify):', notifiable.uuid);
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+
+      if (!service) {
+        const msg = discovered.length > 0
+          ? 'No serial service. Found: ' + discovered.join(', ')
+          : 'No GATT services found. Is Flipper in Phone Input mode?';
+        throw new Error(msg);
+      }
+    }
+
+    // If we didn't auto-detect chars, use the known UUIDs
+    if (!rxChar) {
+      rxChar = await service.getCharacteristic(SERIAL_RX_UUID);
+    }
+    if (!txChar) {
+      txChar = await service.getCharacteristic(SERIAL_TX_UUID);
+    }
 
     await txChar.startNotifications();
     txChar.addEventListener('characteristicvaluechanged', onTxData);
@@ -392,6 +466,8 @@ async function connectFlipper() {
     const pong = await sendCommand('PING');
     if (pong === 'PONG') {
       toast('Connected to Flipper!');
+    } else {
+      toast('Connected but no PONG response', 'error');
     }
 
   } catch (err) {
