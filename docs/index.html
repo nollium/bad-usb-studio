@@ -487,8 +487,19 @@ async function connectFlipper() {
       }
     }
 
-    await txChar.startNotifications();
-    txChar.addEventListener('characteristicvaluechanged', onTxData);
+    // Subscribe to ALL notifiable characteristics to catch TX data
+    const allChars = await service.getCharacteristics();
+    for (const c of allChars) {
+      if (c.properties.notify || c.properties.indicate) {
+        try {
+          await c.startNotifications();
+          c.addEventListener('characteristicvaluechanged', onTxData);
+          log('Subscribed to ' + c.uuid + (c.properties.notify ? ' (notify)' : ' (indicate)'), 'ok');
+        } catch(subErr) {
+          log('Subscribe failed ' + c.uuid + ': ' + subErr.message, 'err');
+        }
+      }
+    }
 
     setStatus('Connected', 'connected');
     document.getElementById('connect-screen').style.display = 'none';
@@ -668,7 +679,9 @@ async function refreshPayloads() {
   list.innerHTML = '<li style="color: var(--muted); padding: 20px; text-align: center;">Loading...</li>';
 
   try {
+    log('Sending LIST command...');
     const resp = await sendCommand('LIST');
+    log('LIST response: "' + resp + '" (len=' + resp.length + ')');
     list.innerHTML = '';
     if (!resp) {
       list.innerHTML = '<li style="color: var(--muted); padding: 20px; text-align: center;">No payloads saved</li>';
