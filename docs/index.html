@@ -286,7 +286,7 @@ header h1 { font-size: 18px; flex: 1; }
 /* Trackpad */
 .trackpad-area {
   width: 100%;
-  height: 180px;
+  height: 280px;
   background: var(--surface);
   border: 1px solid var(--card);
   border-radius: 10px;
@@ -503,7 +503,7 @@ header h1 { font-size: 18px; flex: 1; }
         <button class="btn btn-success btn-sm" id="mouse-start-btn" onclick="mouseStart()">Start Mouse</button>
         <button class="btn btn-danger btn-sm" id="mouse-stop-btn" onclick="mouseStop()" disabled>Stop</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);">
-          Speed <input type="range" id="mouse-speed" min="1" max="10" value="4" style="width:80px;">
+          Speed <input type="range" id="mouse-speed" min="1" max="15" value="6" style="width:80px;">
         </label>
       </div>
 
@@ -518,7 +518,7 @@ header h1 { font-size: 18px; flex: 1; }
       </div>
 
       <!-- Trackpad -->
-      <div class="trackpad-area" id="trackpad">Drag to move cursor</div>
+      <div class="trackpad-area" id="trackpad">1 finger: move &bull; 2 fingers: scroll</div>
 
       <!-- Scroll -->
       <div class="scroll-row">
@@ -1151,8 +1151,38 @@ async function kbTypeText() {
 // --- Mouse / Trackpad ---
 let mouseActive = false;
 let trackpadLastX = 0, trackpadLastY = 0;
+let trackpadLastTime = 0;
 let trackpadMoving = false;
 let mouseThrottle = null;
+
+// Acceleration curve inspired by Windows "Enhance pointer precision"
+// Slow movements → precise (1:1), fast swipes → amplified (up to 6x)
+function accelCurve(rawDelta, dtMs) {
+  const speed = parseInt(document.getElementById('mouse-speed').value) || 5;
+  const baseSens = speed * 0.8;
+  const absDelta = Math.abs(rawDelta);
+  if (absDelta < 0.5) return 0;
+
+  // Velocity = pixels per 16ms frame (normalized)
+  const dt = Math.max(dtMs, 4);
+  const velocity = (absDelta / dt) * 16;
+
+  // Piecewise acceleration:
+  // velocity < 2: slow/precise, gain ~1x
+  // velocity 2-8: medium, ramp up
+  // velocity > 8: fast swipe, high gain
+  let gain;
+  if (velocity < 2) {
+    gain = 1.0;
+  } else if (velocity < 8) {
+    gain = 1.0 + (velocity - 2) * 0.6;
+  } else {
+    gain = 4.6 + (velocity - 8) * 0.8;
+  }
+
+  const result = rawDelta * baseSens * gain;
+  return Math.round(Math.max(-127, Math.min(127, result)));
+}
 
 function mouseStart() {
   if (!kbActive) {
@@ -1187,67 +1217,88 @@ function initTrackpad() {
   if (pad._initialized) return;
   pad._initialized = true;
 
+  let scrollLastY = 0;
+  let scrollAccum = 0;
+  let isScrolling = false;
+
+  function handleMoveStart(x, y) {
+    trackpadLastX = x;
+    trackpadLastY = y;
+    trackpadLastTime = performance.now();
+    trackpadMoving = true;
+    isScrolling = false;
+    pad.classList.add('touching');
+  }
+
+  function handleMove(x, y) {
+    if (!trackpadMoving || !mouseActive || isScrolling) return;
+    const now = performance.now();
+    const dt = now - trackpadLastTime;
+    const rawDx = x - trackpadLastX;
+    const rawDy = y - trackpadLastY;
+    trackpadLastX = x;
+    trackpadLastY = y;
+    trackpadLastTime = now;
+    const dx = accelCurve(rawDx, dt);
+    const dy = accelCurve(rawDy, dt);
+    if (dx === 0 && dy === 0) return;
+    if (!mouseThrottle) {
+      sendCommand('MMOVE:' + dx + ',' + dy);
+      mouseThrottle = setTimeout(() => { mouseThrottle = null; }, 16);
+    }
+  }
+
+  function handleMoveEnd() {
+    trackpadMoving = false;
+    isScrolling = false;
+    pad.classList.remove('touching');
+  }
+
   pad.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    const t = e.touches[0];
-    trackpadLastX = t.clientX;
-    trackpadLastY = t.clientY;
-    trackpadMoving = true;
-    pad.classList.add('touching');
+    if (e.touches.length === 2) {
+      // Two-finger scroll mode
+      isScrolling = true;
+      trackpadMoving = false;
+      scrollLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      scrollAccum = 0;
+      pad.classList.add('touching');
+    } else if (e.touches.length === 1) {
+      handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
+    }
   }, {passive: false});
-
   pad.addEventListener('touchmove', (e) => {
     e.preventDefault();
-    if (!trackpadMoving || !mouseActive) return;
-    const t = e.touches[0];
-    const speed = parseInt(document.getElementById('mouse-speed').value) || 4;
-    let dx = Math.round((t.clientX - trackpadLastX) * speed / 3);
-    let dy = Math.round((t.clientY - trackpadLastY) * speed / 3);
-    trackpadLastX = t.clientX;
-    trackpadLastY = t.clientY;
-    if (dx === 0 && dy === 0) return;
-    // Clamp to int8 range
-    dx = Math.max(-127, Math.min(127, dx));
-    dy = Math.max(-127, Math.min(127, dy));
-    // Throttle: send at most every 20ms
-    if (!mouseThrottle) {
-      sendCommand('MMOVE:' + dx + ',' + dy);
-      mouseThrottle = setTimeout(() => { mouseThrottle = null; }, 20);
+    if (!mouseActive) return;
+    if (e.touches.length === 2 && isScrolling) {
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      const rawDelta = scrollLastY - midY;
+      scrollLastY = midY;
+      scrollAccum += rawDelta;
+      // Send scroll every ~20px of movement
+      if (Math.abs(scrollAccum) >= 12) {
+        const steps = Math.round(scrollAccum / 12);
+        const clamped = Math.max(-10, Math.min(10, steps));
+        sendCommand('MSCROLL:' + clamped);
+        scrollAccum -= steps * 12;
+      }
+    } else if (e.touches.length === 1 && !isScrolling) {
+      handleMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, {passive: false});
-
   pad.addEventListener('touchend', (e) => {
     e.preventDefault();
-    trackpadMoving = false;
-    pad.classList.remove('touching');
-  }, {passive: false});
-
-  // Desktop mouse fallback
-  pad.addEventListener('mousedown', (e) => {
-    trackpadLastX = e.clientX;
-    trackpadLastY = e.clientY;
-    trackpadMoving = true;
-    pad.classList.add('touching');
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!trackpadMoving || !mouseActive) return;
-    const speed = parseInt(document.getElementById('mouse-speed').value) || 4;
-    let dx = Math.round((e.clientX - trackpadLastX) * speed / 3);
-    let dy = Math.round((e.clientY - trackpadLastY) * speed / 3);
-    trackpadLastX = e.clientX;
-    trackpadLastY = e.clientY;
-    if (dx === 0 && dy === 0) return;
-    dx = Math.max(-127, Math.min(127, dx));
-    dy = Math.max(-127, Math.min(127, dy));
-    if (!mouseThrottle) {
-      sendCommand('MMOVE:' + dx + ',' + dy);
-      mouseThrottle = setTimeout(() => { mouseThrottle = null; }, 20);
+    if (e.touches.length === 0) {
+      handleMoveEnd();
+    } else if (e.touches.length === 1 && isScrolling) {
+      // Went from 2 fingers to 1 — switch to move mode
+      isScrolling = false;
+      handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
     }
-  });
-  document.addEventListener('mouseup', () => {
-    trackpadMoving = false;
-    pad.classList.remove('touching');
-  });
+  }, {passive: false});
+  pad.addEventListener('mousedown', (e) => handleMoveStart(e.clientX, e.clientY));
+  document.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+  document.addEventListener('mouseup', handleMoveEnd);
 }
 
 function mouseDown(btn, e) {
