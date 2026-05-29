@@ -105,6 +105,23 @@ static void handle_phone_command(BadUsbStudioApp* app) {
         phone_tx_str(furi_string_get_cstr(response));
         furi_string_free(response);
         update_widget(app, "Listed payloads", NULL, NULL);
+    } else if(strncasecmp(cmd, "GET:", 4) == 0) {
+        const char* filename = cmd + 4;
+        FuriString* path = furi_string_alloc();
+        payload_storage_make_path(path, filename);
+        FuriString** lines = NULL;
+        uint16_t count = payload_storage_load(furi_string_get_cstr(path), &lines);
+        FuriString* response = furi_string_alloc();
+        for(uint16_t i = 0; i < count; i++) {
+            if(i > 0) furi_string_push_back(response, '\n');
+            furi_string_cat(response, lines[i]);
+            furi_string_free(lines[i]);
+        }
+        if(lines) free(lines);
+        phone_tx_str(furi_string_get_cstr(response));
+        furi_string_free(response);
+        furi_string_free(path);
+        update_widget(app, "Sent payload:", filename, NULL);
     } else if(strncasecmp(cmd, "SAVE:", 5) == 0) {
         const char* rest = cmd + 5;
         const char* colon = strchr(rest, ':');

@@ -695,12 +695,14 @@ async function refreshPayloads() {
     }
 
     for (const name of names) {
+      const safeName = name.replace(/'/g, "\\'");
       const li = document.createElement('li');
       li.className = 'payload-item';
       li.innerHTML = `
         <span class="name">${name}</span>
         <div class="actions">
-          <button class="btn btn-primary btn-sm" onclick="loadPayload('${name}')">Edit</button>
+          <button class="btn btn-primary btn-sm" onclick="loadPayload('${safeName}')">Edit</button>
+          <button class="btn btn-success btn-sm" onclick="execSaved('${safeName}')">Run</button>
         </div>`;
       list.appendChild(li);
     }
@@ -710,9 +712,34 @@ async function refreshPayloads() {
 }
 
 async function loadPayload(name) {
-  // For now, just switch to editor tab — loading file content would need a GET command
-  toast('Tap to switch to editor and write your payload');
-  switchTab('editor');
+  try {
+    log('Loading ' + name + '...');
+    const resp = await sendCommand('GET:' + name);
+    if (resp) {
+      document.getElementById('editor').value = resp;
+      switchTab('editor');
+      toast('Loaded ' + name);
+    } else {
+      toast('Empty or failed to load', 'error');
+    }
+  } catch (err) {
+    toast('Load failed: ' + err.message, 'error');
+  }
+}
+
+async function execSaved(name) {
+  try {
+    log('Running ' + name + '...');
+    const content = await sendCommand('GET:' + name);
+    if (!content) { toast('Failed to load payload', 'error'); return; }
+    log('Executing...');
+    const resp = await sendCommand('EXEC:' + content);
+    if (resp === 'RUNNING' || resp === 'DONE') {
+      toast('Executed ' + name + '!');
+    }
+  } catch (err) {
+    toast('Exec failed: ' + err.message, 'error');
+  }
 }
 
 async function quickType() {
