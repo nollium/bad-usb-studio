@@ -367,11 +367,7 @@ async function connectFlipper() {
     document.getElementById('connect-btn').disabled = true;
 
     device = await navigator.bluetooth.requestDevice({
-      filters: [
-        { namePrefix: 'Flipper' },
-        { namePrefix: 'flipper' },
-        { services: [SERIAL_SERVICE_UUID] }
-      ],
+      acceptAllDevices: true,
       optionalServices: [SERIAL_SERVICE_UUID]
     });
 
