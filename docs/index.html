@@ -1254,6 +1254,8 @@ function initTrackpad() {
   let smoothVx = 0, smoothVy = 0;
   let moveBlocked = false;
   let moveBlockTimer = null;
+  let lastTapTime = 0;
+  let isDragging = false;
 
   function handleMoveStart(x, y) {
     trackpadLastX = x;
@@ -1343,6 +1345,11 @@ function initTrackpad() {
       tapStartX = e.touches[0].clientX;
       tapStartY = e.touches[0].clientY;
       tapStartTime = performance.now();
+      // Detect double-tap-hold for drag selection
+      if (tapStartTime - lastTapTime < 300 && mouseActive) {
+        isDragging = true;
+        sendFast('MDOWN:left');
+      }
       // Block moves briefly — a second finger might arrive for scroll
       moveBlocked = true;
       handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
@@ -1374,6 +1381,18 @@ function initTrackpad() {
   pad.addEventListener('touchend', (e) => {
     e.preventDefault();
     if (e.touches.length === 0) {
+      if (isDragging) {
+        // Release drag
+        sendFast('MUP:left');
+        isDragging = false;
+        tapFingers = 0;
+        // Don't trigger momentum after drag
+        trackpadMoving = false;
+        isScrolling = false;
+        pad.classList.remove('touching');
+        lastTapTime = 0;
+        return;
+      }
       const elapsed = performance.now() - tapStartTime;
       if (!wasDrag && elapsed < 250 && mouseActive) {
         if (tapFingers >= 2) {
@@ -1382,7 +1401,10 @@ function initTrackpad() {
         } else {
           sendFast('MDOWN:left');
           setTimeout(() => sendFast('MUP:left'), 50);
+          lastTapTime = performance.now();
         }
+      } else {
+        lastTapTime = 0;
       }
       tapFingers = 0;
       handleMoveEnd();
