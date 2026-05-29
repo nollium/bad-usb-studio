@@ -1,4 +1,5 @@
 #include "../bad_usb_studio.h"
+#include <furi_hal.h>
 #include <bt/bt_service/bt.h>
 #include <profiles/serial_profile.h>
 #include <extra_profiles/hid_profile.h>
@@ -126,6 +127,38 @@ static void handle_phone_command(BadUsbStudioApp* app) {
             ducky_execute_line(kb_ducky, line_buf);
         }
         phone_tx_str("OK");
+    } else if(strncasecmp(cmd, "MMOVE:", 6) == 0) {
+        if(kb_live) {
+            int dx = 0, dy = 0;
+            const char* args = cmd + 6;
+            dx = atoi(args);
+            const char* comma = strchr(args, ',');
+            if(comma) dy = atoi(comma + 1);
+            furi_hal_hid_mouse_move((int8_t)dx, (int8_t)dy);
+        }
+    } else if(strncasecmp(cmd, "MDOWN:", 6) == 0) {
+        if(kb_live) {
+            const char* btn = cmd + 6;
+            uint8_t b = 0;
+            if(strcasecmp(btn, "left") == 0) b = HID_MOUSE_BTN_LEFT;
+            else if(strcasecmp(btn, "right") == 0) b = HID_MOUSE_BTN_RIGHT;
+            else if(strcasecmp(btn, "middle") == 0) b = HID_MOUSE_BTN_WHEEL;
+            if(b) furi_hal_hid_mouse_press(b);
+        }
+    } else if(strncasecmp(cmd, "MUP:", 4) == 0) {
+        if(kb_live) {
+            const char* btn = cmd + 4;
+            uint8_t b = 0;
+            if(strcasecmp(btn, "left") == 0) b = HID_MOUSE_BTN_LEFT;
+            else if(strcasecmp(btn, "right") == 0) b = HID_MOUSE_BTN_RIGHT;
+            else if(strcasecmp(btn, "middle") == 0) b = HID_MOUSE_BTN_WHEEL;
+            if(b) furi_hal_hid_mouse_release(b);
+        }
+    } else if(strncasecmp(cmd, "MSCROLL:", 8) == 0) {
+        if(kb_live) {
+            int delta = atoi(cmd + 8);
+            furi_hal_hid_mouse_scroll((int8_t)delta);
+        }
     } else if(strcasecmp(cmd, "PING") == 0) {
         update_widget(app, "Got PING!", "Sending PONG...", NULL);
         phone_tx_str("PONG");
