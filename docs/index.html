@@ -475,21 +475,15 @@ async function connectFlipper() {
         log('  ' + c.uuid + ' [' + props.join(',') + ']');
       }
 
-      // Strategy 1: Try raw bidirectional char (...64) for both RX and TX
-      const rawChar = chars.find(c => c.uuid === SERIAL_RAW_UUID);
-      if (rawChar) {
-        log('Using raw bidirectional char: ' + SERIAL_RAW_UUID, 'ok');
-        rxChar = rawChar;
-        txChar = rawChar;
+      // ...62 = serial data write (phone→flipper), ...63 = serial data notify (flipper→phone)
+      // ...64 is NOT the data channel — the serial service callback ignores it
+      rxChar = chars.find(c => c.uuid === SERIAL_RX_UUID);
+      txChar = chars.find(c => c.uuid === SERIAL_TX_UUID);
+      if (rxChar && txChar) {
+        log('RX (write): ' + SERIAL_RX_UUID, 'ok');
+        log('TX (notify): ' + SERIAL_TX_UUID, 'ok');
       } else {
-        // Strategy 2: Separate RX (write) and TX (notify) chars
-        rxChar = chars.find(c => c.uuid === SERIAL_RX_UUID);
-        txChar = chars.find(c => c.uuid === SERIAL_TX_UUID);
-        if (rxChar && txChar) {
-          log('Using RX=' + SERIAL_RX_UUID + ' TX=' + SERIAL_TX_UUID, 'ok');
-        } else {
-          throw new Error('Could not find serial characteristics');
-        }
+        throw new Error('Serial characteristics not found');
       }
     }
 
