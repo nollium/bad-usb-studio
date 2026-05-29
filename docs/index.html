@@ -1387,8 +1387,11 @@ function initTrackpad() {
       tapFingers = 0;
       handleMoveEnd();
     } else if (e.touches.length === 1 && isScrolling) {
+      // Went from 2 fingers to 1 — don't start moving, just ignore
+      // until all fingers are lifted (prevents scroll→move jump)
       isScrolling = false;
-      handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
+      trackpadMoving = false;
+      pad.classList.remove('touching');
     }
   }, {passive: false});
 
