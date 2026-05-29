@@ -305,6 +305,17 @@ header h1 { font-size: 18px; flex: 1; }
       </div>
     </div>
 
+    <!-- Settings -->
+    <div style="margin-top: 16px; display: flex; align-items: center; gap: 12px;">
+      <label style="font-size: 14px; color: var(--muted);">KB Layout:</label>
+      <select id="layout-select" onchange="setLayout(this.value)" style="padding: 8px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--card); border-radius: 8px; font-size: 14px;">
+        <option value="US">US (QWERTY)</option>
+        <option value="FR">FR (AZERTY)</option>
+        <option value="DE">DE (QWERTZ)</option>
+        <option value="ES">ES</option>
+      </select>
+    </div>
+
     <br>
     <button class="btn btn-danger btn-sm" onclick="disconnectFlipper()">Disconnect</button>
   </div>
@@ -763,6 +774,19 @@ async function quickSave() {
   document.getElementById('editor').value = 'STRING ' + text + '\nENTER';
   switchTab('editor');
   showSaveDialog();
+}
+
+async function setLayout(layout) {
+  try {
+    const resp = await sendCommand('LAYOUT:' + layout);
+    if (resp === 'OK') {
+      toast('Layout set to ' + layout);
+    } else {
+      toast('Failed to set layout', 'error');
+    }
+  } catch (err) {
+    toast('Layout error: ' + err.message, 'error');
+  }
 }
 
 // Register service worker

@@ -92,6 +92,21 @@ static void handle_phone_command(BadUsbStudioApp* app) {
     if(strcasecmp(cmd, "PING") == 0) {
         update_widget(app, "Got PING!", "Sending PONG...", NULL);
         phone_tx_str("PONG");
+    } else if(strncasecmp(cmd, "LAYOUT:", 7) == 0) {
+        const char* layout = cmd + 7;
+        if(strcasecmp(layout, "US") == 0) {
+            app->keyboard_layout = KeyboardLayoutUS;
+        } else if(strcasecmp(layout, "FR") == 0) {
+            app->keyboard_layout = KeyboardLayoutFR;
+        } else if(strcasecmp(layout, "DE") == 0) {
+            app->keyboard_layout = KeyboardLayoutDE;
+        } else if(strcasecmp(layout, "ES") == 0) {
+            app->keyboard_layout = KeyboardLayoutES;
+        }
+        phone_tx_str("OK");
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Layout: %s", keyboard_layout_get_name(app->keyboard_layout));
+        update_widget(app, buf, "Waiting for commands...", NULL);
     } else if(strcasecmp(cmd, "LIST") == 0) {
         FuriString** names = NULL;
         uint16_t count = payload_storage_list(&names);
