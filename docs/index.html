@@ -247,29 +247,55 @@ header h1 { font-size: 18px; flex: 1; }
   user-select: none;
 }
 .kb-mod.held { background: var(--accent); border-color: var(--accent); }
-.kb-row { display: flex; gap: 2px; margin-bottom: 2px; justify-content: center; }
+.kb-row { display: flex; gap: 3px; margin-bottom: 3px; justify-content: center; padding: 0 2px; }
 .kb-key {
   flex: 1;
-  max-width: 30px;
-  height: 30px;
+  max-width: 34px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--surface);
   color: var(--text);
-  border: 1px solid var(--card);
-  border-radius: 4px;
-  font-size: 11px;
+  border: none;
+  border-radius: 6px;
+  font-size: 15px;
   cursor: pointer;
   user-select: none;
-  padding: 0 1px;
+  padding: 0;
+  position: relative;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.05s;
 }
-.kb-key:active { background: var(--accent); }
-.kb-key.wide { max-width: 42px; font-size: 9px; }
-.kb-key.wider { max-width: 56px; font-size: 9px; }
-.kb-key.enter { max-width: 80px; font-size: 11px; font-weight: 600; background: var(--accent); }
-.kb-key.space { max-width: 160px; }
-.kb-key.fn { background: var(--card); font-size: 9px; }
+.kb-key:active, .kb-key.pressed { background: var(--accent); color: #fff; }
+.kb-key.wide { max-width: 46px; font-size: 11px; background: var(--card); }
+.kb-key.wider { max-width: 56px; font-size: 11px; background: var(--card); }
+.kb-key.enter { max-width: 80px; font-size: 12px; font-weight: 600; background: var(--accent); }
+.kb-key.space { max-width: 200px; font-size: 12px; background: var(--card); }
+.kb-key.fn { background: var(--card); font-size: 10px; height: 30px; }
+.kb-key.shift-active { background: var(--accent); color: #fff; }
+
+/* Key popup preview */
+.kb-popup {
+  position: fixed;
+  pointer-events: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 28px;
+  font-weight: 600;
+  width: 44px;
+  height: 52px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  transform: translateX(-50%);
+  animation: popIn 0.08s ease-out;
+}
+@keyframes popIn { from { transform: translateX(-50%) scale(0.6); opacity: 0; } }
 .kb-section { margin-bottom: 6px; }
 .kb-section-title { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
 .kb-text-row { display: flex; gap: 4px; margin-bottom: 6px; }
@@ -1010,33 +1036,63 @@ async function quickSave() {
 let kbActive = false;
 let heldMods = new Set();
 let displayLayout = 'US';
+let kbShifted = false;
+let kbSymbols = false;
+let kbPopupEl = null;
 
 const KB_LAYOUTS = {
   US: {
-    numbers: ['`','1','2','3','4','5','6','7','8','9','0','-','='],
-    row1: ['q','w','e','r','t','y','u','i','o','p','[',']','\\'],
-    row2: ['a','s','d','f','g','h','j','k','l',';',"'"],
-    row3: ['z','x','c','v','b','n','m',',','.','/'],
+    row1: ['q','w','e','r','t','y','u','i','o','p'],
+    row2: ['a','s','d','f','g','h','j','k','l'],
+    row3: ['z','x','c','v','b','n','m'],
+    sym1: ['1','2','3','4','5','6','7','8','9','0'],
+    sym2: ['@','#','$','%','&','-','+','(',')'],
+    sym3: ['*','"','\'',':',';','!','?'],
+    extra: [',', '.'],
   },
   FR: {
-    numbers: ['²','&','é','"',"'",'(','-','è','_','ç','à',')','^'],
-    row1: ['a','z','e','r','t','y','u','i','o','p','^','$','*'],
-    row2: ['q','s','d','f','g','h','j','k','l','m','ù'],
-    row3: ['w','x','c','v','b','n',',',';',':','!'],
+    row1: ['a','z','e','r','t','y','u','i','o','p'],
+    row2: ['q','s','d','f','g','h','j','k','l'],
+    row3: ['w','x','c','v','b','n','m'],
+    sym1: ['1','2','3','4','5','6','7','8','9','0'],
+    sym2: ['@','#','€','%','&','-','+','(',')'],
+    sym3: ['*','"','\'',':',';','!','?'],
+    extra: [',', '.'],
   },
   DE: {
-    numbers: ['^','1','2','3','4','5','6','7','8','9','0','ß','`'],
-    row1: ['q','w','e','r','t','z','u','i','o','p','ü','+','#'],
-    row2: ['a','s','d','f','g','h','j','k','l','ö','ä'],
-    row3: ['y','x','c','v','b','n','m',',','.','-'],
+    row1: ['q','w','e','r','t','z','u','i','o','p'],
+    row2: ['a','s','d','f','g','h','j','k','l'],
+    row3: ['y','x','c','v','b','n','m'],
+    sym1: ['1','2','3','4','5','6','7','8','9','0'],
+    sym2: ['@','#','€','%','&','-','+','(',')'],
+    sym3: ['*','"','\'',':',';','!','?'],
+    extra: [',', '.'],
   },
   ES: {
-    numbers: ['º','1','2','3','4','5','6','7','8','9','0',"'",'¡'],
-    row1: ['q','w','e','r','t','y','u','i','o','p','`','+','ç'],
-    row2: ['a','s','d','f','g','h','j','k','l','ñ','\''],
-    row3: ['z','x','c','v','b','n','m',',','.','-'],
+    row1: ['q','w','e','r','t','y','u','i','o','p'],
+    row2: ['a','s','d','f','g','h','j','k','l'],
+    row3: ['z','x','c','v','b','n','m'],
+    sym1: ['1','2','3','4','5','6','7','8','9','0'],
+    sym2: ['@','#','€','%','&','-','+','(',')'],
+    sym3: ['*','"','\'',':',';','!','?'],
+    extra: [',', '.'],
   },
 };
+
+function showPopup(char, x, y) {
+  hidePopup();
+  const el = document.createElement('div');
+  el.className = 'kb-popup';
+  el.textContent = char;
+  el.style.left = x + 'px';
+  el.style.top = (y - 60) + 'px';
+  document.body.appendChild(el);
+  kbPopupEl = el;
+}
+
+function hidePopup() {
+  if (kbPopupEl) { kbPopupEl.remove(); kbPopupEl = null; }
+}
 
 function renderKeyboard() {
   const layout = KB_LAYOUTS[displayLayout] || KB_LAYOUTS.US;
@@ -1044,37 +1100,113 @@ function renderKeyboard() {
   if (!container) return;
 
   function esc(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-  function keyEl(char, cls) {
-    const escaped = esc(char);
-    const jsChar = char.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    return '<div class="kb-key' + (cls ? ' ' + cls : '') + '" onclick="kbChar(\'' + jsChar + '\')">' + escaped.toUpperCase() + '</div>';
+
+  function charKey(c) {
+    const display = kbShifted ? c.toUpperCase() : c;
+    const escaped = esc(display);
+    const jsChar = c.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return '<div class="kb-key" data-char="' + esc(c) + '" data-display="' + escaped + '">' + escaped + '</div>';
   }
 
+  function symKey(c) {
+    const escaped = esc(c);
+    return '<div class="kb-key" data-char="' + esc(c) + '" data-display="' + escaped + '">' + escaped + '</div>';
+  }
+
+  const r1 = kbSymbols ? layout.sym1 : layout.row1;
+  const r2 = kbSymbols ? layout.sym2 : layout.row2;
+  const r3 = kbSymbols ? layout.sym3 : layout.row3;
+  const keyFn = kbSymbols ? symKey : charKey;
+
   let html = '';
-  // Number row
-  html += '<div class="kb-row">';
-  for (const c of layout.numbers) html += keyEl(c);
-  html += '<div class="kb-key wide" onclick="kbKey(\'BACKSPACE\')">Bksp</div></div>';
   // Row 1
-  html += '<div class="kb-row"><div class="kb-key wide" onclick="kbKey(\'TAB\')">Tab</div>';
-  for (const c of layout.row1) html += keyEl(c);
-  html += '</div>';
-  // Row 2
-  html += '<div class="kb-row"><div class="kb-key wide" onclick="kbKey(\'CAPSLOCK\')">Caps</div>';
-  for (const c of layout.row2) html += keyEl(c);
-  html += '<div class="kb-key enter" onclick="kbKey(\'ENTER\')">Enter</div></div>';
-  // Row 3
   html += '<div class="kb-row">';
-  for (const c of layout.row3) html += keyEl(c);
+  for (const c of r1) html += keyFn(c);
   html += '</div>';
-  // Space
-  html += '<div class="kb-row"><div class="kb-key space" onclick="kbKey(\'SPACE\')">Space</div></div>';
+  // Row 2 (indented like Gboard)
+  html += '<div class="kb-row" style="padding: 0 12px;">';
+  for (const c of r2) html += keyFn(c);
+  html += '</div>';
+  // Row 3 with shift + backspace
+  html += '<div class="kb-row">';
+  if (!kbSymbols) {
+    html += '<div class="kb-key wide' + (kbShifted ? ' shift-active' : '') + '" data-action="shift">&#8679;</div>';
+  }
+  for (const c of r3) html += keyFn(c);
+  html += '<div class="kb-key wide" data-action="backspace">&#9003;</div>';
+  html += '</div>';
+  // Row 4: symbols toggle, comma, space, period, enter
+  html += '<div class="kb-row">';
+  html += '<div class="kb-key wide" data-action="symbols">' + (kbSymbols ? 'ABC' : '?123') + '</div>';
+  html += '<div class="kb-key" data-char="' + esc(layout.extra[0]) + '" data-display="' + esc(layout.extra[0]) + '">' + esc(layout.extra[0]) + '</div>';
+  html += '<div class="kb-key space" data-action="space">Space</div>';
+  html += '<div class="kb-key" data-char="' + esc(layout.extra[1]) + '" data-display="' + esc(layout.extra[1]) + '">' + esc(layout.extra[1]) + '</div>';
+  html += '<div class="kb-key enter" data-action="enter">&#9166;</div>';
+  html += '</div>';
 
   container.innerHTML = html;
+  setupKeyboardTouch();
 }
 
-// Re-render keyboard when layout changes
-const origSwitchTab = typeof switchTab !== 'undefined' ? switchTab : null;
+function setupKeyboardTouch() {
+  const container = document.getElementById('kb-main-keys');
+  if (!container) return;
+
+  container.querySelectorAll('.kb-key').forEach(key => {
+    key.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      key.classList.add('pressed');
+      const display = key.dataset.display || key.textContent;
+      if (key.dataset.char) {
+        const rect = key.getBoundingClientRect();
+        showPopup(display, rect.left + rect.width / 2, rect.top);
+      }
+    }, {passive: false});
+
+    key.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      key.classList.remove('pressed');
+      hidePopup();
+
+      if (key.dataset.char) {
+        const c = key.dataset.char;
+        if (kbShifted && !kbSymbols) {
+          kbChar(c.toUpperCase());
+          kbShifted = false;
+          renderKeyboard();
+        } else {
+          kbChar(c);
+        }
+      } else if (key.dataset.action) {
+        switch (key.dataset.action) {
+          case 'shift':
+            kbShifted = !kbShifted;
+            renderKeyboard();
+            break;
+          case 'backspace':
+            kbKey('BACKSPACE');
+            break;
+          case 'space':
+            kbKey('SPACE');
+            break;
+          case 'enter':
+            kbKey('ENTER');
+            break;
+          case 'symbols':
+            kbSymbols = !kbSymbols;
+            kbShifted = false;
+            renderKeyboard();
+            break;
+        }
+      }
+    }, {passive: false});
+
+    key.addEventListener('touchcancel', () => {
+      key.classList.remove('pressed');
+      hidePopup();
+    });
+  });
+}
 
 function toggleMod(el) {
   const mod = el.dataset.mod;
