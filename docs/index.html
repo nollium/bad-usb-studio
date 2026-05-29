@@ -537,10 +537,13 @@ function disconnectFlipper() {
 function onTxData(event) {
   const value = event.target.value;
   const bytes = new Uint8Array(value.buffer);
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+  const ascii = Array.from(bytes).map(b => b >= 32 && b < 127 ? String.fromCharCode(b) : '.').join('');
+  log('RX ' + bytes.length + 'B: [' + hex + '] "' + ascii + '"');
 
   for (const b of bytes) {
     if (b === 0) {
-      // End of message
+      log('RX msg complete: "' + rxBuffer + '"', 'ok');
       if (responseResolve) {
         responseResolve(rxBuffer);
         responseResolve = null;
@@ -555,14 +558,22 @@ function onTxData(event) {
 async function sendCommand(cmd) {
   if (!rxChar) throw new Error('Not connected');
 
+  log('TX: "' + cmd.substring(0, 60) + (cmd.length > 60 ? '...' : '') + '"');
   const encoder = new TextEncoder();
   const data = encoder.encode(cmd + '\0');
 
   // Send in chunks (BLE MTU is typically 20-243 bytes)
   const CHUNK_SIZE = 200;
+  log('TX total ' + data.length + 'B via ' + rxChar.uuid);
   for (let i = 0; i < data.length; i += CHUNK_SIZE) {
     const chunk = data.slice(i, Math.min(i + CHUNK_SIZE, data.length));
-    await rxChar.writeValueWithoutResponse(chunk);
+    try {
+      await rxChar.writeValueWithoutResponse(chunk);
+      log('TX chunk ' + chunk.length + 'B sent ok');
+    } catch(writeErr) {
+      log('TX write error: ' + writeErr.message, 'err');
+      throw writeErr;
+    }
   }
 
   // Wait for response with timeout

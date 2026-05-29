@@ -5,13 +5,37 @@
 #include <services/serial_service.h>
 #include <storage/storage.h>
 
+#define FURI_LOG_TAG "PhoneBLE"
+
 static Bt* phone_bt = NULL;
 static FuriHalBleProfileBase* phone_profile = NULL;
 static volatile bool phone_active = false;
+static volatile uint32_t rx_byte_count = 0;
+static volatile uint32_t rx_msg_count = 0;
+static volatile uint32_t cb_call_count = 0;
+
+static void update_status_widget(BadUsbStudioApp* app, const char* line1, const char* line2, const char* line3) {
+    widget_reset(app->widget);
+    widget_add_string_element(
+        app->widget, 64, 3, AlignCenter, AlignTop, FontPrimary, "Phone Input");
+    if(line1) widget_add_string_element(
+        app->widget, 64, 17, AlignCenter, AlignTop, FontSecondary, line1);
+    if(line2) widget_add_string_element(
+        app->widget, 64, 29, AlignCenter, AlignTop, FontSecondary, line2);
+    if(line3) widget_add_string_element(
+        app->widget, 64, 41, AlignCenter, AlignTop, FontSecondary, line3);
+
+    char stats[48];
+    snprintf(stats, sizeof(stats), "cb:%lu bytes:%lu msgs:%lu",
+             cb_call_count, rx_byte_count, rx_msg_count);
+    widget_add_string_element(
+        app->widget, 64, 55, AlignCenter, AlignTop, FontSecondary, stats);
+}
 
 static void phone_bt_status_cb(BtStatus status, void* context) {
     if(!phone_active) return;
     BadUsbStudioApp* app = context;
+    FURI_LOG_I(FURI_LOG_TAG, "BT status: %d", status);
     if(status == BtStatusConnected) {
         view_dispatcher_send_custom_event(
             app->view_dispatcher, BadUsbStudioCustomEventPhoneConnected);
@@ -22,13 +46,20 @@ static void phone_bt_status_cb(BtStatus status, void* context) {
 }
 
 static uint16_t phone_serial_cb(SerialServiceEvent event, void* context) {
+    cb_call_count++;
+    FURI_LOG_I(FURI_LOG_TAG, "serial_cb event=%d size=%d", event.event, event.data.size);
+
     if(!phone_active) return 0;
     BadUsbStudioApp* app = context;
 
     if(event.event == SerialServiceEventTypeDataReceived) {
+        rx_byte_count += event.data.size;
         for(uint16_t i = 0; i < event.data.size; i++) {
             char c = (char)event.data.buffer[i];
             if(c == '\0') {
+                rx_msg_count++;
+                FURI_LOG_I(FURI_LOG_TAG, "msg: \"%s\"",
+                           furi_string_get_cstr(app->ble_rx_buf));
                 view_dispatcher_send_custom_event(
                     app->view_dispatcher, BadUsbStudioCustomEventPhoneData);
             } else {
@@ -40,13 +71,19 @@ static uint16_t phone_serial_cb(SerialServiceEvent event, void* context) {
 }
 
 static void phone_tx_str(const char* str) {
-    if(!phone_profile || !phone_active) return;
+    FURI_LOG_I(FURI_LOG_TAG, "TX: \"%s\"", str);
+    if(!phone_profile || !phone_active) {
+        FURI_LOG_E(FURI_LOG_TAG, "TX failed: profile=%p active=%d",
+                   phone_profile, phone_active);
+        return;
+    }
     uint16_t len = strlen(str) + 1;
     const uint16_t chunk = BLE_PROFILE_SERIAL_PACKET_SIZE_MAX;
     const uint8_t* data = (const uint8_t*)str;
     while(len > 0) {
         uint16_t send = (len > chunk) ? chunk : len;
-        ble_profile_serial_tx(phone_profile, (uint8_t*)data, send);
+        bool ok = ble_profile_serial_tx(phone_profile, (uint8_t*)data, send);
+        FURI_LOG_I(FURI_LOG_TAG, "TX chunk %d bytes, ok=%d", send, ok);
         data += send;
         len -= send;
         if(len > 0) furi_delay_ms(10);
@@ -55,11 +92,17 @@ static void phone_tx_str(const char* str) {
 
 static void handle_phone_command(BadUsbStudioApp* app) {
     const char* cmd = furi_string_get_cstr(app->ble_rx_buf);
+    FURI_LOG_I(FURI_LOG_TAG, "CMD: \"%s\"", cmd);
+
+    char display_buf[32];
+    snprintf(display_buf, sizeof(display_buf), "CMD: %.24s", cmd);
 
     if(strcasecmp(cmd, "PING") == 0) {
+        update_status_widget(app, "Got PING!", "Sending PONG...", NULL);
         phone_tx_str("PONG");
 
     } else if(strcasecmp(cmd, "LIST") == 0) {
+        update_status_widget(app, "Got LIST", "Listing payloads...", NULL);
         FuriString** names = NULL;
         uint16_t count = payload_storage_list(&names);
         FuriString* response = furi_string_alloc();
@@ -108,18 +151,14 @@ static void handle_phone_command(BadUsbStudioApp* app) {
                 furi_string_get_cstr(full_path), app->script_lines, app->script_line_count);
             phone_tx_str(ok ? "OK" : "ERR");
 
-            widget_reset(app->widget);
-            widget_add_string_element(
-                app->widget, 64, 5, AlignCenter, AlignTop, FontPrimary, "Phone Input");
-            widget_add_string_element(
-                app->widget, 64, 25, AlignCenter, AlignTop, FontSecondary,
-                ok ? "Saved!" : "Save failed");
-            widget_add_string_element(
-                app->widget, 64, 40, AlignCenter, AlignTop, FontSecondary, filename);
+            update_status_widget(app,
+                ok ? "Saved!" : "Save FAILED",
+                filename, NULL);
             furi_string_free(full_path);
         }
 
     } else if(strncasecmp(cmd, "EXEC:", 5) == 0) {
+        update_status_widget(app, "Executing payload...", NULL, NULL);
         const char* content = cmd + 5;
         bad_usb_studio_script_clear(app);
         FuriString* line = furi_string_alloc();
@@ -134,12 +173,6 @@ static void handle_phone_command(BadUsbStudioApp* app) {
         if(furi_string_size(line) > 0)
             bad_usb_studio_script_add_line(app, furi_string_get_cstr(line));
         furi_string_free(line);
-
-        widget_reset(app->widget);
-        widget_add_string_element(
-            app->widget, 64, 5, AlignCenter, AlignTop, FontPrimary, "Phone Input");
-        widget_add_string_element(
-            app->widget, 64, 25, AlignCenter, AlignTop, FontSecondary, "Executing...");
 
         phone_tx_str("RUNNING");
 
@@ -157,21 +190,18 @@ static void handle_phone_command(BadUsbStudioApp* app) {
         ducky_state_free(state);
 
         phone_tx_str("DONE");
-
-        widget_reset(app->widget);
-        widget_add_string_element(
-            app->widget, 64, 5, AlignCenter, AlignTop, FontPrimary, "Phone Input");
-        widget_add_string_element(
-            app->widget, 64, 25, AlignCenter, AlignTop, FontSecondary, "Done! Connected.");
+        update_status_widget(app, "Done!", "Waiting for commands...", NULL);
+    } else {
+        update_status_widget(app, "Unknown command:", display_buf, NULL);
     }
 
     furi_string_reset(app->ble_rx_buf);
 }
 
-// BLE setup runs in a worker thread to avoid UI deadlock
 static int32_t phone_ble_setup_worker(void* context) {
     BadUsbStudioApp* app = context;
 
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: opening BT");
     phone_bt = furi_record_open(RECORD_BT);
     bt_disconnect(phone_bt);
     furi_delay_ms(500);
@@ -180,44 +210,40 @@ static int32_t phone_ble_setup_worker(void* context) {
     bt_keys_storage_set_storage_path(
         phone_bt, EXT_PATH("apps_data/bad_usb_studio/.bt_serial.keys"));
 
-    // Step 1: Switch to HID to cleanly leave the default serial/RPC profile
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: switching to HID");
     BleProfileHidParams hid_params = {.device_name_prefix = "BadUSB", .mac_xor = 0};
     FuriHalBleProfileBase* hid = bt_profile_start(phone_bt, ble_profile_hid, &hid_params);
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: HID profile = %p", hid);
     if(!hid) {
-        if(phone_active) {
+        if(phone_active)
             view_dispatcher_send_custom_event(
                 app->view_dispatcher, BadUsbStudioCustomEventExecError);
-        }
         return -1;
     }
 
-    // Give the BLE stack time to fully settle on HID
     furi_delay_ms(1000);
-
     if(!phone_active) return -1;
 
-    // Step 2: Switch from HID to serial — this gives us a clean serial profile handle
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: switching to serial");
     phone_profile = bt_profile_start(phone_bt, ble_profile_serial, NULL);
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: serial profile = %p", phone_profile);
     if(!phone_profile) {
-        // Fallback: restore default
         bt_profile_restore_default(phone_bt);
-        if(phone_active) {
+        if(phone_active)
             view_dispatcher_send_custom_event(
                 app->view_dispatcher, BadUsbStudioCustomEventExecError);
-        }
         return -1;
     }
 
     furi_delay_ms(500);
-
     if(!phone_active) return -1;
 
-    // Step 3: Hook our serial callback and disable RPC
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: setting callback + disabling RPC");
     ble_profile_serial_set_event_callback(
         phone_profile, 512, phone_serial_cb, app);
     ble_profile_serial_set_rpc_active(phone_profile, false);
+    FURI_LOG_I(FURI_LOG_TAG, "Setup: done, advertising");
 
-    // Signal success
     if(phone_active) {
         view_dispatcher_send_custom_event(
             app->view_dispatcher, BadUsbStudioCustomEventPhoneDisconnected);
@@ -232,6 +258,9 @@ void bad_usb_studio_scene_phone_input_on_enter(void* context) {
     furi_string_reset(app->ble_rx_buf);
     phone_active = true;
     phone_profile = NULL;
+    rx_byte_count = 0;
+    rx_msg_count = 0;
+    cb_call_count = 0;
 
     widget_reset(app->widget);
     widget_add_string_element(
@@ -242,7 +271,6 @@ void bad_usb_studio_scene_phone_input_on_enter(void* context) {
         app->widget, 64, 40, AlignCenter, AlignTop, FontSecondary, "Please wait ~3s");
     view_dispatcher_switch_to_view(app->view_dispatcher, BadUsbStudioViewWidget);
 
-    // Run BLE setup in background thread
     app->exec_thread = furi_thread_alloc_ex(
         "PhoneBLE", 2048, phone_ble_setup_worker, app);
     furi_thread_start(app->exec_thread);
@@ -254,41 +282,18 @@ bool bad_usb_studio_scene_phone_input_on_event(void* context, SceneManagerEvent 
     if(event.type == SceneManagerEventTypeCustom) {
         switch(event.event) {
         case BadUsbStudioCustomEventPhoneConnected:
-            widget_reset(app->widget);
-            widget_add_string_element(
-                app->widget, 64, 5, AlignCenter, AlignTop, FontPrimary, "Phone Input");
-            widget_add_string_element(
-                app->widget, 64, 25, AlignCenter, AlignCenter, FontSecondary,
-                "Phone connected!");
-            widget_add_string_element(
-                app->widget, 64, 40, AlignCenter, AlignCenter, FontSecondary,
-                "Waiting for commands...");
+            FURI_LOG_I(FURI_LOG_TAG, "Phone connected!");
+            update_status_widget(app, "Phone connected!", "Waiting for commands...", NULL);
             return true;
 
         case BadUsbStudioCustomEventPhoneDisconnected:
-            widget_reset(app->widget);
-            widget_add_string_element(
-                app->widget, 64, 5, AlignCenter, AlignTop, FontPrimary, "Phone Input");
-            widget_add_string_element(
-                app->widget, 64, 20, AlignCenter, AlignTop, FontSecondary, "Advertising...");
-            widget_add_string_element(
-                app->widget, 64, 34, AlignCenter, AlignTop, FontSecondary,
-                "Open PWA on phone");
-            widget_add_string_element(
-                app->widget, 64, 46, AlignCenter, AlignTop, FontSecondary,
-                "and tap Connect");
+            FURI_LOG_I(FURI_LOG_TAG, "Advertising / disconnected");
+            update_status_widget(app, "Advertising...", "Open PWA and connect", NULL);
             return true;
 
         case BadUsbStudioCustomEventExecError:
-            widget_reset(app->widget);
-            widget_add_string_element(
-                app->widget, 64, 5, AlignCenter, AlignTop, FontPrimary, "Phone Input");
-            widget_add_string_element(
-                app->widget, 64, 25, AlignCenter, AlignCenter, FontSecondary,
-                "BLE init failed!");
-            widget_add_string_element(
-                app->widget, 64, 40, AlignCenter, AlignCenter, FontSecondary,
-                "Press Back to return");
+            FURI_LOG_E(FURI_LOG_TAG, "BLE init failed");
+            update_status_widget(app, "BLE init FAILED!", "Press Back to return", NULL);
             return true;
 
         case BadUsbStudioCustomEventPhoneData:
@@ -303,17 +308,14 @@ bool bad_usb_studio_scene_phone_input_on_event(void* context, SceneManagerEvent 
 void bad_usb_studio_scene_phone_input_on_exit(void* context) {
     BadUsbStudioApp* app = context;
 
-    // Signal worker to stop
     phone_active = false;
 
-    // Wait for worker thread to finish
     if(app->exec_thread) {
         furi_thread_join(app->exec_thread);
         furi_thread_free(app->exec_thread);
         app->exec_thread = NULL;
     }
 
-    // Restore BLE
     if(phone_bt) {
         bt_set_status_changed_callback(phone_bt, NULL, NULL);
         if(phone_profile) {
