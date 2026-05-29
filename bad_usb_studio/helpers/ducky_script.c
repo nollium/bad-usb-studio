@@ -121,11 +121,12 @@ static void ducky_press_key_combo(DuckyState* state, const char* line) {
         state->transport->kb_press(modifiers[i]);
     }
     if(key != HID_KEYBOARD_NONE) {
+        furi_delay_ms(30);
         state->transport->kb_press(key);
     }
-    furi_delay_ms(50);
+    furi_delay_ms(150);
     state->transport->kb_release_all();
-    furi_delay_ms(10);
+    furi_delay_ms(20);
 }
 
 DuckyState* ducky_state_alloc(void) {
