@@ -1220,6 +1220,9 @@ function initTrackpad() {
   let scrollLastY = 0;
   let scrollAccum = 0;
   let isScrolling = false;
+  let tapStartX = 0, tapStartY = 0, tapStartTime = 0;
+  let tapFingers = 0;
+  let wasDrag = false;
 
   function handleMoveStart(x, y) {
     trackpadLastX = x;
@@ -1256,14 +1259,18 @@ function initTrackpad() {
 
   pad.addEventListener('touchstart', (e) => {
     e.preventDefault();
+    tapFingers = Math.max(tapFingers, e.touches.length);
+    wasDrag = false;
     if (e.touches.length === 2) {
-      // Two-finger scroll mode
       isScrolling = true;
       trackpadMoving = false;
       scrollLastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
       scrollAccum = 0;
       pad.classList.add('touching');
     } else if (e.touches.length === 1) {
+      tapStartX = e.touches[0].clientX;
+      tapStartY = e.touches[0].clientY;
+      tapStartTime = performance.now();
       handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, {passive: false});
@@ -1283,15 +1290,28 @@ function initTrackpad() {
         scrollAccum -= steps * 12;
       }
     } else if (e.touches.length === 1 && !isScrolling) {
+      const movedDist = Math.abs(e.touches[0].clientX - tapStartX) + Math.abs(e.touches[0].clientY - tapStartY);
+      if (movedDist > 6) wasDrag = true;
       handleMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, {passive: false});
   pad.addEventListener('touchend', (e) => {
     e.preventDefault();
     if (e.touches.length === 0) {
+      // Detect tap: short duration, minimal movement
+      const elapsed = performance.now() - tapStartTime;
+      if (!wasDrag && elapsed < 250 && mouseActive) {
+        if (tapFingers >= 2) {
+          sendCommand('MDOWN:right');
+          setTimeout(() => sendCommand('MUP:right'), 50);
+        } else {
+          sendCommand('MDOWN:left');
+          setTimeout(() => sendCommand('MUP:left'), 50);
+        }
+      }
+      tapFingers = 0;
       handleMoveEnd();
     } else if (e.touches.length === 1 && isScrolling) {
-      // Went from 2 fingers to 1 — switch to move mode
       isScrolling = false;
       handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
     }
