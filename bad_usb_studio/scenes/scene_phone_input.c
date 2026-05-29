@@ -88,77 +88,68 @@ static void phone_bt_status_cb(BtStatus status, void* context) {
     }
 }
 
+static void ensure_hid_started(BadUsbStudioApp* app) {
+    if(kb_live) {
+        kb_ducky->layout = app->keyboard_layout;
+        return;
+    }
+    const HidTransport* transport = &hid_transport_usb;
+    transport->init();
+    for(int i = 0; i < 20 && !transport->is_connected(); i++)
+        furi_delay_ms(100);
+    kb_ducky = ducky_state_alloc();
+    kb_ducky->transport = transport;
+    kb_ducky->layout = app->keyboard_layout;
+    kb_live = true;
+}
+
 static void handle_phone_command(BadUsbStudioApp* app) {
     const char* cmd = furi_string_get_cstr(app->ble_rx_buf);
     FURI_LOG_I(FURI_LOG_TAG, "CMD: \"%s\"", cmd);
 
     if(strcasecmp(cmd, "KBSTART") == 0) {
-        if(!kb_live) {
-            const HidTransport* transport = &hid_transport_usb;
-            transport->init();
-            for(int i = 0; i < 20 && !transport->is_connected(); i++)
-                furi_delay_ms(100);
-            kb_ducky = ducky_state_alloc();
-            kb_ducky->transport = transport;
-            kb_ducky->layout = app->keyboard_layout;
-            kb_live = true;
-        }
+        ensure_hid_started(app);
         phone_tx_str("OK");
-        update_widget(app, "Live keyboard ON", "USB HID active", NULL);
     } else if(strcasecmp(cmd, "KBSTOP") == 0) {
-        if(kb_live) {
-            kb_ducky->transport->kb_release_all();
-            kb_ducky->transport->deinit();
-            ducky_state_free(kb_ducky);
-            kb_ducky = NULL;
-            kb_live = false;
-        }
         phone_tx_str("OK");
-        update_widget(app, "Live keyboard OFF", "Waiting for commands...", NULL);
     } else if(strncasecmp(cmd, "KBKEY:", 6) == 0) {
-        if(kb_live && kb_ducky) {
-            ducky_execute_line(kb_ducky, cmd + 6);
-        }
+        ensure_hid_started(app);
+        ducky_execute_line(kb_ducky, cmd + 6);
         phone_tx_str("OK");
     } else if(strncasecmp(cmd, "KBTYPE:", 7) == 0) {
-        if(kb_live && kb_ducky) {
-            char line_buf[270];
-            snprintf(line_buf, sizeof(line_buf), "STRING %s", cmd + 7);
-            ducky_execute_line(kb_ducky, line_buf);
-        }
+        ensure_hid_started(app);
+        char line_buf[270];
+        snprintf(line_buf, sizeof(line_buf), "STRING %s", cmd + 7);
+        ducky_execute_line(kb_ducky, line_buf);
         phone_tx_str("OK");
     } else if(strncasecmp(cmd, "MMOVE:", 6) == 0) {
-        if(kb_live) {
-            int dx = 0, dy = 0;
-            const char* args = cmd + 6;
-            dx = atoi(args);
-            const char* comma = strchr(args, ',');
-            if(comma) dy = atoi(comma + 1);
-            furi_hal_hid_mouse_move((int8_t)dx, (int8_t)dy);
-        }
+        ensure_hid_started(app);
+        int dx = 0, dy = 0;
+        const char* args = cmd + 6;
+        dx = atoi(args);
+        const char* comma = strchr(args, ',');
+        if(comma) dy = atoi(comma + 1);
+        furi_hal_hid_mouse_move((int8_t)dx, (int8_t)dy);
     } else if(strncasecmp(cmd, "MDOWN:", 6) == 0) {
-        if(kb_live) {
-            const char* btn = cmd + 6;
-            uint8_t b = 0;
-            if(strcasecmp(btn, "left") == 0) b = HID_MOUSE_BTN_LEFT;
-            else if(strcasecmp(btn, "right") == 0) b = HID_MOUSE_BTN_RIGHT;
-            else if(strcasecmp(btn, "middle") == 0) b = HID_MOUSE_BTN_WHEEL;
-            if(b) furi_hal_hid_mouse_press(b);
-        }
+        ensure_hid_started(app);
+        const char* btn = cmd + 6;
+        uint8_t b = 0;
+        if(strcasecmp(btn, "left") == 0) b = HID_MOUSE_BTN_LEFT;
+        else if(strcasecmp(btn, "right") == 0) b = HID_MOUSE_BTN_RIGHT;
+        else if(strcasecmp(btn, "middle") == 0) b = HID_MOUSE_BTN_WHEEL;
+        if(b) furi_hal_hid_mouse_press(b);
     } else if(strncasecmp(cmd, "MUP:", 4) == 0) {
-        if(kb_live) {
-            const char* btn = cmd + 4;
-            uint8_t b = 0;
-            if(strcasecmp(btn, "left") == 0) b = HID_MOUSE_BTN_LEFT;
-            else if(strcasecmp(btn, "right") == 0) b = HID_MOUSE_BTN_RIGHT;
-            else if(strcasecmp(btn, "middle") == 0) b = HID_MOUSE_BTN_WHEEL;
-            if(b) furi_hal_hid_mouse_release(b);
-        }
+        ensure_hid_started(app);
+        const char* btn = cmd + 4;
+        uint8_t b = 0;
+        if(strcasecmp(btn, "left") == 0) b = HID_MOUSE_BTN_LEFT;
+        else if(strcasecmp(btn, "right") == 0) b = HID_MOUSE_BTN_RIGHT;
+        else if(strcasecmp(btn, "middle") == 0) b = HID_MOUSE_BTN_WHEEL;
+        if(b) furi_hal_hid_mouse_release(b);
     } else if(strncasecmp(cmd, "MSCROLL:", 8) == 0) {
-        if(kb_live) {
-            int delta = atoi(cmd + 8);
-            furi_hal_hid_mouse_scroll((int8_t)delta);
-        }
+        ensure_hid_started(app);
+        int delta = atoi(cmd + 8);
+        furi_hal_hid_mouse_scroll((int8_t)delta);
     } else if(strcasecmp(cmd, "PING") == 0) {
         update_widget(app, "Got PING!", "Sending PONG...", NULL);
         phone_tx_str("PONG");

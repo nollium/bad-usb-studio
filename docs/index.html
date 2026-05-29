@@ -459,11 +459,6 @@ header h1 { font-size: 18px; flex: 1; }
 
     <!-- Keyboard tab -->
     <div id="tab-keyboard" class="tab-content">
-      <div id="kb-status" class="kb-status">USB HID inactive — tap Start</div>
-      <div style="display:flex; gap:6px; margin-bottom:10px;">
-        <button class="btn btn-success btn-sm" id="kb-start-btn" onclick="kbStart()">Start Keyboard</button>
-        <button class="btn btn-danger btn-sm" id="kb-stop-btn" onclick="kbStop()" disabled>Stop</button>
-      </div>
 
       <!-- Type text -->
       <div class="kb-text-row">
@@ -544,12 +539,9 @@ header h1 { font-size: 18px; flex: 1; }
 
     <!-- Mouse tab -->
     <div id="tab-mouse" class="tab-content">
-      <div id="mouse-status" class="kb-status">USB HID inactive — tap Start</div>
-      <div style="display:flex; gap:6px; margin-bottom:8px;">
-        <button class="btn btn-success btn-sm" id="mouse-start-btn" onclick="mouseStart()">Start Mouse</button>
-        <button class="btn btn-danger btn-sm" id="mouse-stop-btn" onclick="mouseStop()" disabled>Stop</button>
+      <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
         <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);">
-          Speed <input type="range" id="mouse-speed" min="1" max="15" value="6" style="width:80px;">
+          Speed <input type="range" id="mouse-speed" min="1" max="15" value="6" style="width:100px;">
         </label>
       </div>
 
@@ -781,6 +773,9 @@ async function connectFlipper() {
     setStatus('Connected', 'connected');
     document.getElementById('connect-screen').style.display = 'none';
     document.getElementById('main-screen').style.display = 'block';
+    kbActive = true;
+    mouseActive = true;
+    initTrackpad();
 
     // Ping to verify
     const pong = await sendCommand('PING');
@@ -808,6 +803,8 @@ function onDisconnected() {
   rxChar = null;
   txChar = null;
   server = null;
+  kbActive = false;
+  mouseActive = false;
 }
 
 function disconnectFlipper() {
@@ -1290,42 +1287,15 @@ function clearMods() {
   document.querySelectorAll('.kb-mod.held').forEach(e => e.classList.remove('held'));
 }
 
-async function kbStart() {
-  try {
-    const resp = await sendCommand('KBSTART');
-    if (resp === 'OK') {
-      kbActive = true;
-      document.getElementById('kb-status').textContent = 'USB HID active';
-      document.getElementById('kb-status').className = 'kb-status active';
-      document.getElementById('kb-start-btn').disabled = true;
-      document.getElementById('kb-stop-btn').disabled = false;
-    } else {
-      toast('Failed to start keyboard', 'error');
-    }
-  } catch(e) { toast('Error: ' + e.message, 'error'); }
-}
-
-async function kbStop() {
-  try {
-    await sendCommand('KBSTOP');
-  } catch(e) {}
-  kbActive = false;
-  document.getElementById('kb-status').textContent = 'USB HID inactive';
-  document.getElementById('kb-status').className = 'kb-status';
-  document.getElementById('kb-start-btn').disabled = false;
-  document.getElementById('kb-stop-btn').disabled = true;
-  clearMods();
-}
-
 async function kbKey(keyName) {
-  if (!kbActive) { toast('Start keyboard first', 'error'); return; }
+  if (!kbActive) return;
   const cmd = getModPrefix() + keyName;
   clearMods();
   sendCommand('KBKEY:' + cmd);
 }
 
 async function kbChar(c) {
-  if (!kbActive) { toast('Start keyboard first', 'error'); return; }
+  if (!kbActive) return;
   if (heldMods.size > 0) {
     const cmd = getModPrefix() + c;
     clearMods();
@@ -1336,12 +1306,12 @@ async function kbChar(c) {
 }
 
 async function kbRaw(duckyLine) {
-  if (!kbActive) { toast('Start keyboard first', 'error'); return; }
+  if (!kbActive) return;
   sendCommand('KBKEY:' + duckyLine);
 }
 
 async function kbTypeText() {
-  if (!kbActive) { toast('Start keyboard first', 'error'); return; }
+  if (!kbActive) return;
   const text = document.getElementById('kb-text').value;
   if (!text) return;
   await sendCommand('KBTYPE:' + text);
@@ -1404,33 +1374,6 @@ function momentumFrame() {
   rafId = requestAnimationFrame(momentumFrame);
 }
 
-function mouseStart() {
-  if (!kbActive) {
-    kbStart().then(() => {
-      mouseActive = true;
-      document.getElementById('mouse-status').textContent = 'USB HID active';
-      document.getElementById('mouse-status').className = 'kb-status active';
-      document.getElementById('mouse-start-btn').disabled = true;
-      document.getElementById('mouse-stop-btn').disabled = false;
-      initTrackpad();
-    });
-  } else {
-    mouseActive = true;
-    document.getElementById('mouse-status').textContent = 'USB HID active';
-    document.getElementById('mouse-status').className = 'kb-status active';
-    document.getElementById('mouse-start-btn').disabled = true;
-    document.getElementById('mouse-stop-btn').disabled = false;
-    initTrackpad();
-  }
-}
-
-function mouseStop() {
-  mouseActive = false;
-  document.getElementById('mouse-status').textContent = 'USB HID inactive';
-  document.getElementById('mouse-status').className = 'kb-status';
-  document.getElementById('mouse-start-btn').disabled = false;
-  document.getElementById('mouse-stop-btn').disabled = true;
-}
 
 function initTrackpad() {
   const pad = document.getElementById('trackpad');
@@ -1624,7 +1567,7 @@ function setupMouseButtons() {
 
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      if (!mouseActive) { toast('Start mouse first', 'error'); return; }
+      if (!mouseActive) return;
       el.setPointerCapture(e.pointerId);
       heldBtnPointers[btn] = e.pointerId;
       el.classList.add('held');
@@ -1650,7 +1593,7 @@ function setupMouseButtons() {
 }
 
 function mouseScroll(delta) {
-  if (!mouseActive) { toast('Start mouse first', 'error'); return; }
+  if (!mouseActive) return;
   sendFast('MSCROLL:' + delta);
 }
 
