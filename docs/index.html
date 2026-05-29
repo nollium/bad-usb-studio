@@ -1167,25 +1167,24 @@ let accumDx = 0, accumDy = 0;
 // Slow movements → precise (1:1), fast swipes → amplified (up to 6x)
 function accelCurve(rawDelta, dtMs) {
   const speed = parseInt(document.getElementById('mouse-speed').value) || 5;
-  const baseSens = speed * 0.8;
+  const baseSens = speed * 0.25;
   const absDelta = Math.abs(rawDelta);
-  if (absDelta < 0.5) return 0;
+  if (absDelta < 0.3) return 0;
 
-  // Velocity = pixels per 16ms frame (normalized)
   const dt = Math.max(dtMs, 4);
   const velocity = (absDelta / dt) * 16;
 
-  // Piecewise acceleration:
-  // velocity < 2: slow/precise, gain ~1x
-  // velocity 2-8: medium, ramp up
-  // velocity > 8: fast swipe, high gain
+  // Gentle acceleration curve:
+  // velocity < 3: precise 1:1
+  // velocity 3-10: gentle ramp
+  // velocity > 10: moderate boost, capped
   let gain;
-  if (velocity < 2) {
+  if (velocity < 3) {
     gain = 1.0;
-  } else if (velocity < 8) {
-    gain = 1.0 + (velocity - 2) * 0.6;
+  } else if (velocity < 10) {
+    gain = 1.0 + (velocity - 3) * 0.2;
   } else {
-    gain = 4.6 + (velocity - 8) * 0.8;
+    gain = 2.4 + (velocity - 10) * 0.1;
   }
 
   return rawDelta * baseSens * gain;
