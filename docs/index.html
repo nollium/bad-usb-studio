@@ -400,73 +400,8 @@ header h1 { font-size: 18px; flex: 1; }
         </div>
       </div>
 
-      <!-- Number row -->
-      <div class="kb-section">
-        <div class="kb-row">
-          <div class="kb-key" onclick="kbChar('`')">`</div>
-          <div class="kb-key" onclick="kbChar('1')">1</div>
-          <div class="kb-key" onclick="kbChar('2')">2</div>
-          <div class="kb-key" onclick="kbChar('3')">3</div>
-          <div class="kb-key" onclick="kbChar('4')">4</div>
-          <div class="kb-key" onclick="kbChar('5')">5</div>
-          <div class="kb-key" onclick="kbChar('6')">6</div>
-          <div class="kb-key" onclick="kbChar('7')">7</div>
-          <div class="kb-key" onclick="kbChar('8')">8</div>
-          <div class="kb-key" onclick="kbChar('9')">9</div>
-          <div class="kb-key" onclick="kbChar('0')">0</div>
-          <div class="kb-key" onclick="kbChar('-')">-</div>
-          <div class="kb-key" onclick="kbChar('=')">=</div>
-          <div class="kb-key wide" onclick="kbKey('BACKSPACE')">Bksp</div>
-        </div>
-
-        <!-- QWERTY rows -->
-        <div class="kb-row">
-          <div class="kb-key wide" onclick="kbKey('TAB')">Tab</div>
-          <div class="kb-key" onclick="kbChar('q')">Q</div>
-          <div class="kb-key" onclick="kbChar('w')">W</div>
-          <div class="kb-key" onclick="kbChar('e')">E</div>
-          <div class="kb-key" onclick="kbChar('r')">R</div>
-          <div class="kb-key" onclick="kbChar('t')">T</div>
-          <div class="kb-key" onclick="kbChar('y')">Y</div>
-          <div class="kb-key" onclick="kbChar('u')">U</div>
-          <div class="kb-key" onclick="kbChar('i')">I</div>
-          <div class="kb-key" onclick="kbChar('o')">O</div>
-          <div class="kb-key" onclick="kbChar('p')">P</div>
-          <div class="kb-key" onclick="kbChar('[')">[</div>
-          <div class="kb-key" onclick="kbChar(']')">]</div>
-          <div class="kb-key" onclick="kbChar('\\')">\</div>
-        </div>
-        <div class="kb-row">
-          <div class="kb-key wide" onclick="kbKey('CAPSLOCK')">Caps</div>
-          <div class="kb-key" onclick="kbChar('a')">A</div>
-          <div class="kb-key" onclick="kbChar('s')">S</div>
-          <div class="kb-key" onclick="kbChar('d')">D</div>
-          <div class="kb-key" onclick="kbChar('f')">F</div>
-          <div class="kb-key" onclick="kbChar('g')">G</div>
-          <div class="kb-key" onclick="kbChar('h')">H</div>
-          <div class="kb-key" onclick="kbChar('j')">J</div>
-          <div class="kb-key" onclick="kbChar('k')">K</div>
-          <div class="kb-key" onclick="kbChar('l')">L</div>
-          <div class="kb-key" onclick="kbChar(';')">;</div>
-          <div class="kb-key" onclick="kbChar('\'')">'</div>
-          <div class="kb-key wider" onclick="kbKey('ENTER')">Enter</div>
-        </div>
-        <div class="kb-row">
-          <div class="kb-key" onclick="kbChar('z')">Z</div>
-          <div class="kb-key" onclick="kbChar('x')">X</div>
-          <div class="kb-key" onclick="kbChar('c')">C</div>
-          <div class="kb-key" onclick="kbChar('v')">V</div>
-          <div class="kb-key" onclick="kbChar('b')">B</div>
-          <div class="kb-key" onclick="kbChar('n')">N</div>
-          <div class="kb-key" onclick="kbChar('m')">M</div>
-          <div class="kb-key" onclick="kbChar(',')">,</div>
-          <div class="kb-key" onclick="kbChar('.')">.</div>
-          <div class="kb-key" onclick="kbChar('/')">/</div>
-        </div>
-        <div class="kb-row">
-          <div class="kb-key space" onclick="kbKey('SPACE')">Space</div>
-        </div>
-      </div>
+      <!-- Dynamic keyboard layout -->
+      <div class="kb-section" id="kb-main-keys"></div>
 
       <!-- Nav + arrows -->
       <div class="kb-section">
@@ -980,6 +915,72 @@ async function quickSave() {
 // --- Remote Keyboard ---
 let kbActive = false;
 let heldMods = new Set();
+let displayLayout = 'US';
+
+const KB_LAYOUTS = {
+  US: {
+    numbers: ['`','1','2','3','4','5','6','7','8','9','0','-','='],
+    row1: ['q','w','e','r','t','y','u','i','o','p','[',']','\\'],
+    row2: ['a','s','d','f','g','h','j','k','l',';',"'"],
+    row3: ['z','x','c','v','b','n','m',',','.','/'],
+  },
+  FR: {
+    numbers: ['²','&','é','"',"'",'(','-','è','_','ç','à',')','^'],
+    row1: ['a','z','e','r','t','y','u','i','o','p','^','$','*'],
+    row2: ['q','s','d','f','g','h','j','k','l','m','ù'],
+    row3: ['w','x','c','v','b','n',',',';',':','!'],
+  },
+  DE: {
+    numbers: ['^','1','2','3','4','5','6','7','8','9','0','ß','`'],
+    row1: ['q','w','e','r','t','z','u','i','o','p','ü','+','#'],
+    row2: ['a','s','d','f','g','h','j','k','l','ö','ä'],
+    row3: ['y','x','c','v','b','n','m',',','.','-'],
+  },
+  ES: {
+    numbers: ['º','1','2','3','4','5','6','7','8','9','0',"'",'¡'],
+    row1: ['q','w','e','r','t','y','u','i','o','p','`','+','ç'],
+    row2: ['a','s','d','f','g','h','j','k','l','ñ','\''],
+    row3: ['z','x','c','v','b','n','m',',','.','-'],
+  },
+};
+
+function renderKeyboard() {
+  const layout = KB_LAYOUTS[displayLayout] || KB_LAYOUTS.US;
+  const container = document.getElementById('kb-main-keys');
+  if (!container) return;
+
+  function esc(c) { return c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function keyEl(char, cls) {
+    const escaped = esc(char);
+    const jsChar = char.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return '<div class="kb-key' + (cls ? ' ' + cls : '') + '" onclick="kbChar(\'' + jsChar + '\')">' + escaped.toUpperCase() + '</div>';
+  }
+
+  let html = '';
+  // Number row
+  html += '<div class="kb-row">';
+  for (const c of layout.numbers) html += keyEl(c);
+  html += '<div class="kb-key wide" onclick="kbKey(\'BACKSPACE\')">Bksp</div></div>';
+  // Row 1
+  html += '<div class="kb-row"><div class="kb-key wide" onclick="kbKey(\'TAB\')">Tab</div>';
+  for (const c of layout.row1) html += keyEl(c);
+  html += '</div>';
+  // Row 2
+  html += '<div class="kb-row"><div class="kb-key wide" onclick="kbKey(\'CAPSLOCK\')">Caps</div>';
+  for (const c of layout.row2) html += keyEl(c);
+  html += '<div class="kb-key wider" onclick="kbKey(\'ENTER\')">Enter</div></div>';
+  // Row 3
+  html += '<div class="kb-row">';
+  for (const c of layout.row3) html += keyEl(c);
+  html += '</div>';
+  // Space
+  html += '<div class="kb-row"><div class="kb-key space" onclick="kbKey(\'SPACE\')">Space</div></div>';
+
+  container.innerHTML = html;
+}
+
+// Re-render keyboard when layout changes
+const origSwitchTab = typeof switchTab !== 'undefined' ? switchTab : null;
 
 function toggleMod(el) {
   const mod = el.dataset.mod;
@@ -1061,6 +1062,8 @@ async function kbTypeText() {
 }
 
 async function setLayout(layout) {
+  displayLayout = layout;
+  renderKeyboard();
   try {
     const resp = await sendCommand('LAYOUT:' + layout);
     if (resp === 'OK') {
@@ -1072,6 +1075,9 @@ async function setLayout(layout) {
     toast('Layout error: ' + err.message, 'error');
   }
 }
+
+// Initial keyboard render
+renderKeyboard();
 
 // Register service worker
 if ('serviceWorker' in navigator) {
