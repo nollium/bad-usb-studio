@@ -102,14 +102,14 @@ static void ducky_press_key_combo(DuckyState* state, const char* line) {
         *p = '\0';
 
         if(strcasecmp(token_start, "CTRL") == 0 || strcasecmp(token_start, "CONTROL") == 0) {
-            if(mod_count < 4) modifiers[mod_count++] = HID_KEYBOARD_L_CTRL;
+            if(mod_count < 4) modifiers[mod_count++] = KEY_MOD_LEFT_CTRL;
         } else if(strcasecmp(token_start, "SHIFT") == 0) {
-            if(mod_count < 4) modifiers[mod_count++] = HID_KEYBOARD_L_SHIFT;
+            if(mod_count < 4) modifiers[mod_count++] = KEY_MOD_LEFT_SHIFT;
         } else if(strcasecmp(token_start, "ALT") == 0) {
-            if(mod_count < 4) modifiers[mod_count++] = HID_KEYBOARD_L_ALT;
+            if(mod_count < 4) modifiers[mod_count++] = KEY_MOD_LEFT_ALT;
         } else if(strcasecmp(token_start, "GUI") == 0 || strcasecmp(token_start, "WINDOWS") == 0 ||
                    strcasecmp(token_start, "COMMAND") == 0 || strcasecmp(token_start, "META") == 0) {
-            if(mod_count < 4) modifiers[mod_count++] = HID_KEYBOARD_L_GUI;
+            if(mod_count < 4) modifiers[mod_count++] = KEY_MOD_LEFT_GUI;
         } else {
             key = ducky_find_key(token_start);
         }
