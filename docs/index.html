@@ -267,6 +267,7 @@ header h1 { font-size: 18px; flex: 1; }
 .kb-key:active { background: var(--accent); }
 .kb-key.wide { max-width: 42px; font-size: 9px; }
 .kb-key.wider { max-width: 56px; font-size: 9px; }
+.kb-key.enter { max-width: 80px; font-size: 11px; font-weight: 600; background: var(--accent); }
 .kb-key.space { max-width: 160px; }
 .kb-key.fn { background: var(--card); font-size: 9px; }
 .kb-section { margin-bottom: 6px; }
@@ -1061,7 +1062,7 @@ function renderKeyboard() {
   // Row 2
   html += '<div class="kb-row"><div class="kb-key wide" onclick="kbKey(\'CAPSLOCK\')">Caps</div>';
   for (const c of layout.row2) html += keyEl(c);
-  html += '<div class="kb-key wider" onclick="kbKey(\'ENTER\')">Enter</div></div>';
+  html += '<div class="kb-key enter" onclick="kbKey(\'ENTER\')">Enter</div></div>';
   // Row 3
   html += '<div class="kb-row">';
   for (const c of layout.row3) html += keyEl(c);
