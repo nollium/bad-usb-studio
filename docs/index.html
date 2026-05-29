@@ -246,6 +246,7 @@ header h1 { font-size: 18px; flex: 1; }
     <br>
     <button class="btn btn-primary" id="connect-btn" onclick="connectFlipper()">Connect via Bluetooth</button>
     <p style="margin-top: 20px; font-size: 12px;">Requires Chrome on Android with Web Bluetooth</p>
+    <div id="connect-log" class="log" style="margin-top: 20px; text-align: left; max-height: 200px;"></div>
   </div>
 
   <!-- Main screen -->
@@ -352,12 +353,16 @@ function toast(msg, type = 'success') {
 }
 
 function log(msg, cls = '') {
-  const el = document.getElementById('log');
-  const e = document.createElement('div');
-  e.className = 'entry ' + cls;
-  e.textContent = '> ' + msg;
-  el.appendChild(e);
-  el.scrollTop = el.scrollHeight;
+  console.log(msg);
+  for (const id of ['log', 'connect-log']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const e = document.createElement('div');
+    e.className = 'entry ' + cls;
+    e.textContent = '> ' + msg;
+    el.appendChild(e);
+    el.scrollTop = el.scrollHeight;
+  }
 }
 
 async function connectFlipper() {
@@ -383,9 +388,12 @@ async function connectFlipper() {
       ]
     });
 
+    log('Selected: ' + (device.name || 'unnamed') + ' (' + device.id + ')');
     device.addEventListener('gattserverdisconnected', onDisconnected);
     setStatus('GATT connect...', 'connecting');
+    log('Connecting GATT...');
     server = await device.gatt.connect();
+    log('GATT connected', 'ok');
 
     // Try known serial service UUID first, then discover all services
     let service = null;
@@ -397,10 +405,10 @@ async function connectFlipper() {
     for (const uuid of uuidsToTry) {
       try {
         service = await server.getPrimaryService(uuid);
-        console.log('Found service:', uuid);
+        log('Found service: ' + uuid, 'ok');
         break;
       } catch (e) {
-        console.log('Service not found:', uuid);
+        log('Service not found: ' + uuid);
       }
     }
 
@@ -410,9 +418,9 @@ async function connectFlipper() {
       try {
         const services = await server.getPrimaryServices();
         discovered = services.map(s => s.uuid);
-        console.log('Available services:', discovered);
+        log('Available services: ' + JSON.stringify(discovered));
       } catch (e) {
-        console.log('Cannot enumerate services:', e.message);
+        log('Cannot enumerate services: ' + e.message, 'err');
       }
 
       // Try each discovered service to find one with our RX/TX characteristics
@@ -421,7 +429,7 @@ async function connectFlipper() {
           const testSvc = await server.getPrimaryService(s);
           const chars = await testSvc.getCharacteristics();
           const charUuids = chars.map(c => c.uuid);
-          console.log('Service', s, 'chars:', charUuids);
+          log('Service ' + s + ' chars: ' + charUuids.join(', '));
 
           // Look for a writable + notifiable pair (serial RX/TX pattern)
           const writable = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
@@ -430,8 +438,8 @@ async function connectFlipper() {
             service = testSvc;
             rxChar = writable;
             txChar = notifiable;
-            console.log('Auto-detected serial service:', s);
-            console.log('RX (write):', writable.uuid, 'TX (notify):', notifiable.uuid);
+            log('Auto-detected serial: ' + s, 'ok');
+            log('RX=' + writable.uuid + ' TX=' + notifiable.uuid, 'ok');
             break;
           }
         } catch (e) {
@@ -471,7 +479,7 @@ async function connectFlipper() {
     }
 
   } catch (err) {
-    console.error(err);
+    log('ERROR: ' + err.message, 'err');
     setStatus('Disconnected', 'disconnected');
     document.getElementById('connect-btn').disabled = false;
     if (err.name !== 'NotFoundError') {
