@@ -212,10 +212,10 @@ static int32_t phone_ble_setup_worker(void* context) {
 
     if(!phone_active) return -1;
 
-    // Step 3: Disable RPC and hook our serial callback
-    ble_profile_serial_set_rpc_active(phone_profile, false);
+    // Step 3: Hook our serial callback and disable RPC
     ble_profile_serial_set_event_callback(
         phone_profile, 512, phone_serial_cb, app);
+    ble_profile_serial_set_rpc_active(phone_profile, false);
 
     // Signal success
     if(phone_active) {

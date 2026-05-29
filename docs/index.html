@@ -328,9 +328,14 @@ header h1 { font-size: 18px; flex: 1; }
 
 <script>
 const SERIAL_SERVICE_UUID = '8fe5b3d5-2e7f-4a98-2a48-7acc60fe0000';
-// RX = phone writes TO flipper, TX = flipper notifies phone
-const SERIAL_RX_UUID = '19ed82ae-ed21-4c9d-4145-228e62fe0000';
-const SERIAL_TX_UUID = '19ed82ae-ed21-4c9d-4145-228e63fe0000';
+// Flipper serial service characteristics:
+// ...61 = read,indicate (flow control)
+// ...62 = read,write,writeNoResp (RPC write)
+// ...63 = read,notify (RPC notify)
+// ...64 = read,write,notify (raw data channel)
+const SERIAL_RX_UUID = '19ed82ae-ed21-4c9d-4145-228e62fe0000';  // write to flipper
+const SERIAL_TX_UUID = '19ed82ae-ed21-4c9d-4145-228e63fe0000';  // notify from flipper
+const SERIAL_RAW_UUID = '19ed82ae-ed21-4c9d-4145-228e64fe0000'; // raw bidirectional
 
 let device = null;
 let server = null;
@@ -456,40 +461,35 @@ async function connectFlipper() {
       }
     }
 
-    // If we didn't auto-detect chars, discover them
+    // Discover characteristics
     if (!rxChar || !txChar) {
       log('Discovering characteristics...');
-      try {
-        const chars = await service.getCharacteristics();
-        for (const c of chars) {
-          const props = [];
-          if (c.properties.read) props.push('read');
-          if (c.properties.write) props.push('write');
-          if (c.properties.writeWithoutResponse) props.push('writeNoResp');
-          if (c.properties.notify) props.push('notify');
-          if (c.properties.indicate) props.push('indicate');
-          log('  ' + c.uuid + ' [' + props.join(',') + ']');
-        }
+      const chars = await service.getCharacteristics();
+      for (const c of chars) {
+        const props = [];
+        if (c.properties.read) props.push('read');
+        if (c.properties.write) props.push('write');
+        if (c.properties.writeWithoutResponse) props.push('writeNoResp');
+        if (c.properties.notify) props.push('notify');
+        if (c.properties.indicate) props.push('indicate');
+        log('  ' + c.uuid + ' [' + props.join(',') + ']');
+      }
 
-        // Auto-detect: writable = RX (phone→flipper), notify = TX (flipper→phone)
-        // Prefer notify over indicate, prefer writeWithoutResponse over write
-        const writable = chars.find(c => c.properties.writeWithoutResponse) ||
-                          chars.find(c => c.properties.write && !c.properties.notify);
-        const notifiable = chars.find(c => c.properties.notify && !c.properties.write) ||
-                            chars.find(c => c.properties.notify);
-        if (writable && notifiable) {
-          rxChar = writable;
-          txChar = notifiable;
-          log('RX=' + rxChar.uuid, 'ok');
-          log('TX=' + txChar.uuid, 'ok');
+      // Strategy 1: Try raw bidirectional char (...64) for both RX and TX
+      const rawChar = chars.find(c => c.uuid === SERIAL_RAW_UUID);
+      if (rawChar) {
+        log('Using raw bidirectional char: ' + SERIAL_RAW_UUID, 'ok');
+        rxChar = rawChar;
+        txChar = rawChar;
+      } else {
+        // Strategy 2: Separate RX (write) and TX (notify) chars
+        rxChar = chars.find(c => c.uuid === SERIAL_RX_UUID);
+        txChar = chars.find(c => c.uuid === SERIAL_TX_UUID);
+        if (rxChar && txChar) {
+          log('Using RX=' + SERIAL_RX_UUID + ' TX=' + SERIAL_TX_UUID, 'ok');
         } else {
-          throw new Error('No writable+notifiable char pair found');
+          throw new Error('Could not find serial characteristics');
         }
-      } catch (charErr) {
-        // Fallback to known UUIDs
-        log('Discovery failed: ' + charErr.message + ', trying known UUIDs...', 'err');
-        rxChar = await service.getCharacteristic(SERIAL_RX_UUID);
-        txChar = await service.getCharacteristic(SERIAL_TX_UUID);
       }
     }
 
