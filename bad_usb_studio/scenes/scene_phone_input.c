@@ -13,6 +13,8 @@ static volatile bool phone_active = false;
 static volatile uint32_t cb_call_count = 0;
 static volatile uint32_t rx_byte_count = 0;
 static BadUsbStudioApp* phone_app = NULL;
+static bool kb_live = false;
+static DuckyState* kb_ducky = NULL;
 
 static void update_widget(BadUsbStudioApp* app, const char* l1, const char* l2, const char* l3) {
     widget_reset(app->widget);
@@ -89,7 +91,42 @@ static void handle_phone_command(BadUsbStudioApp* app) {
     const char* cmd = furi_string_get_cstr(app->ble_rx_buf);
     FURI_LOG_I(FURI_LOG_TAG, "CMD: \"%s\"", cmd);
 
-    if(strcasecmp(cmd, "PING") == 0) {
+    if(strcasecmp(cmd, "KBSTART") == 0) {
+        if(!kb_live) {
+            const HidTransport* transport = &hid_transport_usb;
+            transport->init();
+            for(int i = 0; i < 20 && !transport->is_connected(); i++)
+                furi_delay_ms(100);
+            kb_ducky = ducky_state_alloc();
+            kb_ducky->transport = transport;
+            kb_ducky->layout = app->keyboard_layout;
+            kb_live = true;
+        }
+        phone_tx_str("OK");
+        update_widget(app, "Live keyboard ON", "USB HID active", NULL);
+    } else if(strcasecmp(cmd, "KBSTOP") == 0) {
+        if(kb_live) {
+            kb_ducky->transport->kb_release_all();
+            kb_ducky->transport->deinit();
+            ducky_state_free(kb_ducky);
+            kb_ducky = NULL;
+            kb_live = false;
+        }
+        phone_tx_str("OK");
+        update_widget(app, "Live keyboard OFF", "Waiting for commands...", NULL);
+    } else if(strncasecmp(cmd, "KBKEY:", 6) == 0) {
+        if(kb_live && kb_ducky) {
+            ducky_execute_line(kb_ducky, cmd + 6);
+        }
+        phone_tx_str("OK");
+    } else if(strncasecmp(cmd, "KBTYPE:", 7) == 0) {
+        if(kb_live && kb_ducky) {
+            char line_buf[270];
+            snprintf(line_buf, sizeof(line_buf), "STRING %s", cmd + 7);
+            ducky_execute_line(kb_ducky, line_buf);
+        }
+        phone_tx_str("OK");
+    } else if(strcasecmp(cmd, "PING") == 0) {
         update_widget(app, "Got PING!", "Sending PONG...", NULL);
         phone_tx_str("PONG");
     } else if(strncasecmp(cmd, "LAYOUT:", 7) == 0) {
@@ -296,6 +333,15 @@ bool bad_usb_studio_scene_phone_input_on_event(void* context, SceneManagerEvent 
 void bad_usb_studio_scene_phone_input_on_exit(void* context) {
     BadUsbStudioApp* app = context;
     phone_active = false;
+
+    // Clean up live keyboard
+    if(kb_live && kb_ducky) {
+        kb_ducky->transport->kb_release_all();
+        kb_ducky->transport->deinit();
+        ducky_state_free(kb_ducky);
+        kb_ducky = NULL;
+        kb_live = false;
+    }
 
     if(app->exec_thread) {
         furi_thread_join(app->exec_thread);
