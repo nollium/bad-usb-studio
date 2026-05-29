@@ -827,6 +827,13 @@ async function sendCommand(cmd) {
   });
 }
 
+// Fire-and-forget: send without waiting for response. For mouse/realtime.
+function sendFast(cmd) {
+  if (!rxChar) return;
+  const data = new TextEncoder().encode(cmd + '\0');
+  rxChar.writeValueWithoutResponse(data).catch(() => {});
+}
+
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === 'tab-' + name));
@@ -1154,6 +1161,7 @@ let trackpadLastX = 0, trackpadLastY = 0;
 let trackpadLastTime = 0;
 let trackpadMoving = false;
 let mouseThrottle = null;
+let accumDx = 0, accumDy = 0;
 
 // Acceleration curve inspired by Windows "Enhance pointer precision"
 // Slow movements → precise (1:1), fast swipes → amplified (up to 6x)
@@ -1180,8 +1188,7 @@ function accelCurve(rawDelta, dtMs) {
     gain = 4.6 + (velocity - 8) * 0.8;
   }
 
-  const result = rawDelta * baseSens * gain;
-  return Math.round(Math.max(-127, Math.min(127, result)));
+  return rawDelta * baseSens * gain;
 }
 
 function mouseStart() {
@@ -1230,6 +1237,8 @@ function initTrackpad() {
     trackpadLastTime = performance.now();
     trackpadMoving = true;
     isScrolling = false;
+    accumDx = 0;
+    accumDy = 0;
     pad.classList.add('touching');
   }
 
@@ -1242,12 +1251,20 @@ function initTrackpad() {
     trackpadLastX = x;
     trackpadLastY = y;
     trackpadLastTime = now;
-    const dx = accelCurve(rawDx, dt);
-    const dy = accelCurve(rawDy, dt);
-    if (dx === 0 && dy === 0) return;
+    // Accumulate fractional acceleration output
+    accumDx += accelCurve(rawDx, dt);
+    accumDy += accelCurve(rawDy, dt);
     if (!mouseThrottle) {
-      sendCommand('MMOVE:' + dx + ',' + dy);
-      mouseThrottle = setTimeout(() => { mouseThrottle = null; }, 16);
+      const sx = Math.round(accumDx);
+      const sy = Math.round(accumDy);
+      if (sx !== 0 || sy !== 0) {
+        const cx = Math.max(-127, Math.min(127, sx));
+        const cy = Math.max(-127, Math.min(127, sy));
+        sendFast('MMOVE:' + cx + ',' + cy);
+        accumDx -= cx;
+        accumDy -= cy;
+      }
+      mouseThrottle = setTimeout(() => { mouseThrottle = null; }, 8);
     }
   }
 
@@ -1286,7 +1303,7 @@ function initTrackpad() {
       if (Math.abs(scrollAccum) >= 12) {
         const steps = Math.round(scrollAccum / 12);
         const clamped = Math.max(-10, Math.min(10, steps));
-        sendCommand('MSCROLL:' + clamped);
+        sendFast('MSCROLL:' + clamped);
         scrollAccum -= steps * 12;
       }
     } else if (e.touches.length === 1 && !isScrolling) {
@@ -1302,11 +1319,11 @@ function initTrackpad() {
       const elapsed = performance.now() - tapStartTime;
       if (!wasDrag && elapsed < 250 && mouseActive) {
         if (tapFingers >= 2) {
-          sendCommand('MDOWN:right');
-          setTimeout(() => sendCommand('MUP:right'), 50);
+          sendFast('MDOWN:right');
+          setTimeout(() => sendFast('MUP:right'), 50);
         } else {
-          sendCommand('MDOWN:left');
-          setTimeout(() => sendCommand('MUP:left'), 50);
+          sendFast('MDOWN:left');
+          setTimeout(() => sendFast('MUP:left'), 50);
         }
       }
       tapFingers = 0;
@@ -1324,18 +1341,18 @@ function initTrackpad() {
 function mouseDown(btn, e) {
   e.preventDefault();
   if (!mouseActive) { toast('Start mouse first', 'error'); return; }
-  sendCommand('MDOWN:' + btn);
+  sendFast('MDOWN:' + btn);
 }
 
 function mouseUp(btn, e) {
   e.preventDefault();
   if (!mouseActive) return;
-  sendCommand('MUP:' + btn);
+  sendFast('MUP:' + btn);
 }
 
 function mouseScroll(delta) {
   if (!mouseActive) { toast('Start mouse first', 'error'); return; }
-  sendCommand('MSCROLL:' + delta);
+  sendFast('MSCROLL:' + delta);
 }
 
 async function setLayout(layout) {
