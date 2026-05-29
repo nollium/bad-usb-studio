@@ -1160,34 +1160,55 @@ let mouseActive = false;
 let trackpadLastX = 0, trackpadLastY = 0;
 let trackpadLastTime = 0;
 let trackpadMoving = false;
-let mouseThrottle = null;
 let accumDx = 0, accumDy = 0;
+let velocityX = 0, velocityY = 0;
+let momentumActive = false;
+let rafId = null;
 
-// Acceleration curve inspired by Windows "Enhance pointer precision"
-// Slow movements → precise (1:1), fast swipes → amplified (up to 6x)
+// Smooth acceleration: power curve with soft knee
+// Low velocity = precise, high velocity = boosted but not crazy
 function accelCurve(rawDelta, dtMs) {
-  const speed = parseInt(document.getElementById('mouse-speed').value) || 5;
-  const baseSens = speed * 0.25;
+  const speed = parseInt(document.getElementById('mouse-speed').value) || 6;
+  const sens = 0.15 + speed * 0.12; // 0.87 at speed 6
   const absDelta = Math.abs(rawDelta);
-  if (absDelta < 0.3) return 0;
+  if (absDelta < 0.2) return 0;
 
-  const dt = Math.max(dtMs, 4);
-  const velocity = (absDelta / dt) * 16;
+  const dt = Math.max(dtMs, 2);
+  const v = (absDelta / dt) * 16; // normalize to ~60fps
 
-  // Gentle acceleration curve:
-  // velocity < 3: precise 1:1
-  // velocity 3-10: gentle ramp
-  // velocity > 10: moderate boost, capped
-  let gain;
-  if (velocity < 3) {
-    gain = 1.0;
-  } else if (velocity < 10) {
-    gain = 1.0 + (velocity - 3) * 0.2;
-  } else {
-    gain = 2.4 + (velocity - 10) * 0.1;
+  // Smooth sigmoid-ish: gain = 1 + 2 * (v / (v + 4))
+  // At v=0: gain=1, v=4: gain=2, v=12: gain=2.5, v=40: gain=2.8
+  const gain = 1.0 + 2.0 * (v / (v + 4));
+
+  return rawDelta * sens * gain;
+}
+
+// Momentum loop: decelerates after finger lift
+function momentumFrame() {
+  if (!momentumActive || !mouseActive) { momentumActive = false; return; }
+
+  const friction = 0.88;
+  velocityX *= friction;
+  velocityY *= friction;
+
+  accumDx += velocityX;
+  accumDy += velocityY;
+
+  const sx = Math.round(accumDx);
+  const sy = Math.round(accumDy);
+  if (sx !== 0 || sy !== 0) {
+    const cx = Math.max(-127, Math.min(127, sx));
+    const cy = Math.max(-127, Math.min(127, sy));
+    sendFast('MMOVE:' + cx + ',' + cy);
+    accumDx -= cx;
+    accumDy -= cy;
   }
 
-  return rawDelta * baseSens * gain;
+  if (Math.abs(velocityX) < 0.1 && Math.abs(velocityY) < 0.1) {
+    momentumActive = false;
+    return;
+  }
+  rafId = requestAnimationFrame(momentumFrame);
 }
 
 function mouseStart() {
@@ -1229,6 +1250,8 @@ function initTrackpad() {
   let tapStartX = 0, tapStartY = 0, tapStartTime = 0;
   let tapFingers = 0;
   let wasDrag = false;
+  let pendingSend = false;
+  let smoothVx = 0, smoothVy = 0;
 
   function handleMoveStart(x, y) {
     trackpadLastX = x;
@@ -1238,6 +1261,12 @@ function initTrackpad() {
     isScrolling = false;
     accumDx = 0;
     accumDy = 0;
+    velocityX = 0;
+    velocityY = 0;
+    smoothVx = 0;
+    smoothVy = 0;
+    momentumActive = false;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     pad.classList.add('touching');
   }
 
@@ -1245,29 +1274,51 @@ function initTrackpad() {
     if (!trackpadMoving || !mouseActive || isScrolling) return;
     const now = performance.now();
     const dt = now - trackpadLastTime;
+    if (dt < 1) return;
     const rawDx = x - trackpadLastX;
     const rawDy = y - trackpadLastY;
     trackpadLastX = x;
     trackpadLastY = y;
     trackpadLastTime = now;
-    // Accumulate fractional acceleration output
-    accumDx += accelCurve(rawDx, dt);
-    accumDy += accelCurve(rawDy, dt);
-    if (!mouseThrottle) {
-      const sx = Math.round(accumDx);
-      const sy = Math.round(accumDy);
-      if (sx !== 0 || sy !== 0) {
-        const cx = Math.max(-127, Math.min(127, sx));
-        const cy = Math.max(-127, Math.min(127, sy));
-        sendFast('MMOVE:' + cx + ',' + cy);
-        accumDx -= cx;
-        accumDy -= cy;
-      }
-      mouseThrottle = setTimeout(() => { mouseThrottle = null; }, 8);
+
+    const ax = accelCurve(rawDx, dt);
+    const ay = accelCurve(rawDy, dt);
+    accumDx += ax;
+    accumDy += ay;
+
+    // Track velocity for momentum (exponential smoothing)
+    const alpha = 0.4;
+    smoothVx = smoothVx * (1 - alpha) + (ax / Math.max(dt, 4)) * 16 * alpha;
+    smoothVy = smoothVy * (1 - alpha) + (ay / Math.max(dt, 4)) * 16 * alpha;
+
+    // Batch sends per animation frame
+    if (!pendingSend) {
+      pendingSend = true;
+      requestAnimationFrame(() => {
+        pendingSend = false;
+        const sx = Math.round(accumDx);
+        const sy = Math.round(accumDy);
+        if (sx !== 0 || sy !== 0) {
+          const cx = Math.max(-127, Math.min(127, sx));
+          const cy = Math.max(-127, Math.min(127, sy));
+          sendFast('MMOVE:' + cx + ',' + cy);
+          accumDx -= cx;
+          accumDy -= cy;
+        }
+      });
     }
   }
 
   function handleMoveEnd() {
+    if (trackpadMoving && mouseActive && !isScrolling) {
+      // Start momentum if we had meaningful velocity
+      velocityX = smoothVx;
+      velocityY = smoothVy;
+      if (Math.abs(velocityX) > 0.5 || Math.abs(velocityY) > 0.5) {
+        momentumActive = true;
+        rafId = requestAnimationFrame(momentumFrame);
+      }
+    }
     trackpadMoving = false;
     isScrolling = false;
     pad.classList.remove('touching');
@@ -1290,6 +1341,7 @@ function initTrackpad() {
       handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, {passive: false});
+
   pad.addEventListener('touchmove', (e) => {
     e.preventDefault();
     if (!mouseActive) return;
@@ -1298,23 +1350,22 @@ function initTrackpad() {
       const rawDelta = scrollLastY - midY;
       scrollLastY = midY;
       scrollAccum += rawDelta;
-      // Send scroll every ~20px of movement
-      if (Math.abs(scrollAccum) >= 12) {
-        const steps = Math.round(scrollAccum / 12);
+      if (Math.abs(scrollAccum) >= 10) {
+        const steps = Math.round(scrollAccum / 10);
         const clamped = Math.max(-10, Math.min(10, steps));
         sendFast('MSCROLL:' + clamped);
-        scrollAccum -= steps * 12;
+        scrollAccum -= steps * 10;
       }
     } else if (e.touches.length === 1 && !isScrolling) {
       const movedDist = Math.abs(e.touches[0].clientX - tapStartX) + Math.abs(e.touches[0].clientY - tapStartY);
-      if (movedDist > 6) wasDrag = true;
+      if (movedDist > 5) wasDrag = true;
       handleMove(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, {passive: false});
+
   pad.addEventListener('touchend', (e) => {
     e.preventDefault();
     if (e.touches.length === 0) {
-      // Detect tap: short duration, minimal movement
       const elapsed = performance.now() - tapStartTime;
       if (!wasDrag && elapsed < 250 && mouseActive) {
         if (tapFingers >= 2) {
@@ -1332,6 +1383,7 @@ function initTrackpad() {
       handleMoveStart(e.touches[0].clientX, e.touches[0].clientY);
     }
   }, {passive: false});
+
   pad.addEventListener('mousedown', (e) => handleMoveStart(e.clientX, e.clientY));
   document.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
   document.addEventListener('mouseup', handleMoveEnd);
