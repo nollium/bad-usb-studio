@@ -508,11 +508,14 @@ header h1 { font-size: 18px; flex: 1; }
         </label>
       </div>
 
-      <!-- Mouse buttons (toggle: tap to hold, tap again to release) -->
+      <!-- Mouse buttons (hold to press, release to release) -->
       <div class="mouse-buttons">
-        <div class="mouse-btn" id="mbtn-left" onclick="mouseToggle('left',this)">Left</div>
-        <div class="mouse-btn middle" id="mbtn-middle" onclick="mouseToggle('middle',this)">Mid</div>
-        <div class="mouse-btn" id="mbtn-right" onclick="mouseToggle('right',this)">Right</div>
+        <div class="mouse-btn" ontouchstart="mouseDown('left',event)" ontouchend="mouseUp('left',event)"
+             onmousedown="mouseDown('left',event)" onmouseup="mouseUp('left',event)">Left</div>
+        <div class="mouse-btn middle" ontouchstart="mouseDown('middle',event)" ontouchend="mouseUp('middle',event)"
+             onmousedown="mouseDown('middle',event)" onmouseup="mouseUp('middle',event)">Mid</div>
+        <div class="mouse-btn" ontouchstart="mouseDown('right',event)" ontouchend="mouseUp('right',event)"
+             onmousedown="mouseDown('right',event)" onmouseup="mouseUp('right',event)">Right</div>
       </div>
 
       <!-- Trackpad -->
@@ -1420,19 +1423,16 @@ function initTrackpad() {
   document.addEventListener('mouseup', handleMoveEnd);
 }
 
-let heldButtons = new Set();
-
-function mouseToggle(btn, el) {
+function mouseDown(btn, e) {
+  e.preventDefault();
   if (!mouseActive) { toast('Start mouse first', 'error'); return; }
-  if (heldButtons.has(btn)) {
-    sendFast('MUP:' + btn);
-    heldButtons.delete(btn);
-    el.classList.remove('held');
-  } else {
-    sendFast('MDOWN:' + btn);
-    heldButtons.add(btn);
-    el.classList.add('held');
-  }
+  sendFast('MDOWN:' + btn);
+}
+
+function mouseUp(btn, e) {
+  e.preventDefault();
+  if (!mouseActive) return;
+  sendFast('MUP:' + btn);
 }
 
 function mouseScroll(delta) {
